@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+pydantic
+python-multipart
+PyYAML
+deep_translator
+bocl == 1.0.0
+cryptography
