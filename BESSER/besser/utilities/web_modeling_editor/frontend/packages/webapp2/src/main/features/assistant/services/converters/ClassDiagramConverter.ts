@@ -81,6 +81,28 @@ export class ClassDiagramConverter implements DiagramConverter {
       Object.assign(allElements, completeElement.attributes);
       Object.assign(allElements, completeElement.methods);
     });
+
+    systemSpec.constraints?.forEach((constSpec: any, index: number) => {
+      const constraintId = generateUniqueId('ocl');
+      // Place constraints visually below or near the classes they apply to, or just stack them nicely
+      // Since layout will apply, we just need to ensure the element is in allElements
+      const targetClassId = classIdMap[constSpec.contextClass];
+      const position = this.positionGenerator.getNextPosition();
+      
+      allElements[constraintId] = {
+        id: constraintId,
+        type: 'ClassOCLConstraint',
+        name: '',
+        constraint: constSpec.constraint,
+        owner: null,
+        bounds: { 
+          x: position.x + (index * 20), 
+          y: position.y + (index * 20), 
+          width: 300, 
+          height: 100 
+        }
+      };
+    });
     
     systemSpec.relationships?.forEach((rel: any) => {
       const sourceId = classIdMap[rel.sourceClass || rel.source];
@@ -243,10 +265,20 @@ export class ClassDiagramConverter implements DiagramConverter {
     const classTypes = new Set(['Class', 'AbstractClass', 'Enumeration', 'Interface']);
     const classElements: Record<string, any> = {};
     const childElements: Record<string, any> = {};
+    const constraints: any[] = [];
 
     for (const [id, el] of Object.entries<any>(elements)) {
       if (classTypes.has(el.type)) {
         classElements[id] = el;
+      } else if (el.type === 'ClassOCLConstraint') {
+        let contextClass = 'System';
+        const match = el.constraint?.match(/context\s+(\w+)/i);
+        if (match) contextClass = match[1];
+        
+        constraints.push({
+          contextClass,
+          constraint: el.constraint || ''
+        });
       } else if (el.owner) {
         if (!childElements[el.owner]) childElements[el.owner] = [];
         childElements[el.owner].push(el);
@@ -337,6 +369,7 @@ export class ClassDiagramConverter implements DiagramConverter {
       systemName: 'System',
       classes,
       relationships: rels,
+      constraints,
     };
   }
 

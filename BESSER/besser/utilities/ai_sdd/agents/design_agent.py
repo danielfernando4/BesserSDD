@@ -53,6 +53,12 @@ A JSON object following this EXACT schema (SystemClassSpec):
       "targetMultiplicity": "0..*",
       "name": "places"
     }
+  ],
+  "constraints": [
+    {
+      "contextClass": "User",
+      "constraint": "context User inv:\\n  self.age >= 18"
+    }
   ]
 }
 ```
@@ -65,6 +71,7 @@ A JSON object following this EXACT schema (SystemClassSpec):
 - **isEnumeration**: If true, list enum values as attributes with name only (no type needed)
 - **relationships.type**: One of: "Association", "Inheritance", "Composition", "Aggregation", "Realization", "Dependency"
 - **multiplicities**: "1", "0..1", "0..*", "1..*"
+- **constraints**: If applicable, you MUST declare OCL (Object Constraint Language) constraints for business rules (e.g. self.age >= 18). Each has 'contextClass' (string) and 'constraint' (string containing 'context [class] inv: ...').
 - Every class MUST have at least an 'id' attribute
 - Every requirement MUST map to at least one class
 - Relationships are CRITICAL — always include meaningful connections
