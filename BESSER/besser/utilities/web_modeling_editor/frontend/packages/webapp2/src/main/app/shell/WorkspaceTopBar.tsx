@@ -54,6 +54,7 @@ const WorkspaceTopBarInner: React.FC<WorkspaceTopBarProps> = ({
   projectNameDraft,
   onProjectNameDraftChange,
   onProjectRename,
+  onOpenCCSDD,
 }) => {
   return (
     <header className={`relative z-20 animate-slide-in-down px-4 py-2 sm:px-6 ${headerBackgroundClass}`}>
@@ -128,7 +129,7 @@ const WorkspaceTopBarInner: React.FC<WorkspaceTopBarProps> = ({
           />
           <button
             type="button"
-            onClick={() => onNavigate('/cc-sdd')}
+            onClick={onOpenCCSDD}
             title="CC-SDD: Spec-Driven Development Studio"
             className={`hidden lg:inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-semibold transition-colors ${outlineButtonClass}`}
             style={{

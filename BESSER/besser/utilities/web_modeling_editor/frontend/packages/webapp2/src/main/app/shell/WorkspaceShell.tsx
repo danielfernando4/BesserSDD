@@ -40,6 +40,9 @@ import { useDialogStates } from './hooks/useDialogStates';
 const GitHubSidebar = React.lazy(() =>
   import('../../features/github/components/GitHubSidebar').then((m) => ({ default: m.GitHubSidebar })),
 );
+const CCSDDSidebar = React.lazy(() =>
+  import('../../features/cc-sdd/CCSDDPage').then((m) => ({ default: m.CCSDDPage })),
+);
 const AssistantWorkspaceDrawer = React.lazy(() =>
   import('../../features/assistant/components/AssistantWorkspaceDrawer').then((m) => ({ default: m.AssistantWorkspaceDrawer })),
 );
@@ -127,6 +130,7 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
   const [diagramTitleDraft, setDiagramTitleDraft] = useState(diagram?.title ?? '');
   const [isDarkTheme, setIsDarkTheme] = useState<boolean>(() => isDarkThemeEnabled());
   const [isGitHubSidebarOpen, setIsGitHubSidebarOpen] = useState(false);
+  const [isCCSDDSidebarOpen, setIsCCSDDSidebarOpen] = useState(false);
   const [isAssistantWorkspaceOpen, setIsAssistantWorkspaceOpen] = useState(false);
 
   // Derived values
@@ -486,6 +490,7 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
         projectNameDraft={projectNameDraft}
         onProjectNameDraftChange={setProjectNameDraft}
         onProjectRename={handleProjectRename}
+        onOpenCCSDD={() => setIsCCSDDSidebarOpen(p => !p)}
       />
 
       {/* Mobile hamburger button - visible only below md breakpoint */}
@@ -567,6 +572,14 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
           onNavigate={handleNavigate}
           onToggleExpanded={() => setIsSidebarExpanded((previous) => !previous)}
         />
+
+        {isCCSDDSidebarOpen && (
+          <div className={`relative flex flex-col shrink-0 border-r z-10 w-[450px] shadow-xl ${isDarkTheme ? 'border-border/70 bg-card' : 'border-border/50 bg-card'}`}>
+            <Suspense fallback={<div className="flex h-full items-center justify-center p-4">Loading CC-SDD...</div>}>
+              <CCSDDSidebar onClose={() => setIsCCSDDSidebarOpen(false)} />
+            </Suspense>
+          </div>
+        )}
 
         <main className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
           {location.pathname === '/' && <DiagramTabs />}
