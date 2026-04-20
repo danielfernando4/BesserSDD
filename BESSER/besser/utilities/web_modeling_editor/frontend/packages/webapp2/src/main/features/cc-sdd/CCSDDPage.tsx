@@ -1,18 +1,19 @@
 /**
  * CCSDDPage — Main CC-SDD (Spec-Driven Development) page component for webapp2.
  *
- * Orchestrates the entire SDD workflow:
+ * Orchestrates the interactive SDD workflow:
  * 1. API key configuration
  * 2. Idea input
- * 3. Pipeline execution with real-time feedback
+ * 3. Phase-by-phase pipeline with chat-based interaction (no buttons)
  * 4. File explorer + Markdown viewer
- * 5. Vibe Modeling chat + Canvas integration
+ * 5. Chat always active — agent determines intent (advance/iterate/vibe)
+ * 6. Auto-renders diagram on canvas when design is generated
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppDispatch } from '../../app/store/hooks';
-import { switchDiagramTypeThunk, updateDiagramModelThunk } from '../../app/store/workspaceSlice';
+import { switchDiagramTypeThunk, updateDiagramModelThunk, bumpEditorRevision } from '../../app/store/workspaceSlice';
 import { sddWebSocket, SDDMessage } from './sdd-websocket';
 import './cc-sdd.css';
 
@@ -22,7 +23,7 @@ interface PipelinePhase {
   id: string;
   label: string;
   icon: string;
-  status: 'pending' | 'running' | 'completed' | 'error';
+  status: 'pending' | 'running' | 'completed' | 'ready' | 'error';
 }
 
 interface ChatMessage {
@@ -62,7 +63,6 @@ function renderMarkdown(md: string): string {
     .replace(/^- (.+)$/gm, '<li>$1</li>')
     .replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>');
 
-  // Tables
   html = html.replace(
     /(\|.+\|[\r\n]+\|[\s:|-]+\|[\r\n]+(?:\|.+\|[\r\n]*)+)/g,
     (tableBlock) => {
@@ -84,7 +84,6 @@ function renderMarkdown(md: string): string {
     }
   );
 
-  // Paragraphs
   html = html.split('\n').map(line => {
     const trimmed = line.trim();
     if (!trimmed) return '';
@@ -108,7 +107,7 @@ function renderChatMd(text: string): string {
 const INITIAL_PHASES: PipelinePhase[] = [
   { id: 'brief', label: 'Brief', icon: '📝', status: 'pending' },
   { id: 'requirements', label: 'Requirements', icon: '📋', status: 'pending' },
-  { id: 'design', label: 'Design (BUML)', icon: '🏗️', status: 'pending' },
+  { id: 'design', label: 'Design', icon: '🏗️', status: 'pending' },
   { id: 'traceability', label: 'Traceability', icon: '🔗', status: 'pending' },
 ];
 
@@ -134,6 +133,7 @@ export const CCSDDPage: React.FC<CCSDDPageProps> = ({ onClose }) => {
   // ── State ──────────────────────────────────────────────────────────
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('sdd_gemini_api_key') || '');
   const [apiKeyValid, setApiKeyValid] = useState(false);
+  const [outputDir, setOutputDir] = useState(() => localStorage.getItem('sdd_output_dir') || '');
   const [idea, setIdea] = useState('');
   const [pipelineStarted, setPipelineStarted] = useState(false);
   const [pipelineComplete, setPipelineComplete] = useState(false);
@@ -158,22 +158,49 @@ export const CCSDDPage: React.FC<CCSDDPageProps> = ({ onClose }) => {
     }
   }, [apiKey]);
 
+  // ── Persist outputDir ───────────────────────────────────────────────
+  useEffect(() => {
+    if (outputDir.trim()) {
+      localStorage.setItem('sdd_output_dir', outputDir.trim());
+    }
+  }, [outputDir]);
+
   // ── Auto-scroll chat ────────────────────────────────────────────────
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
 
+  // ── Auto-render diagram on canvas when received ─────────────────────
+  const autoRenderCanvas = useCallback(async (systemSpec: any) => {
+    if (!systemSpec) return;
+    try {
+      // 1. Ensure we're on ClassDiagram
+      await dispatch(switchDiagramTypeThunk({ diagramType: 'ClassDiagram' }));
+
+      // 2. Convert SystemClassSpec → Apollon UMLModel via ConverterFactory
+      const { ConverterFactory } = await import('../assistant/services/converters');
+      const converter = ConverterFactory.getConverter('ClassDiagram');
+      const umlModel = converter.convertCompleteSystem(systemSpec);
+
+      // 3. Dispatch to Redux store and bump editor revision to force re-render
+      await dispatch(updateDiagramModelThunk({ model: umlModel }));
+      dispatch(bumpEditorRevision());
+
+      console.log('[CC-SDD] Diagram auto-rendered:', systemSpec.classes?.length, 'classes');
+    } catch (e) {
+      console.warn('[CC-SDD] Auto-render to canvas failed:', e);
+    }
+  }, [dispatch]);
+
   // ── WebSocket message handler ───────────────────────────────────────
   const handleWsMessage = useCallback((msg: SDDMessage) => {
     switch (msg.type) {
       case 'pipeline_status':
-        // Update pipeline icon status
         setPhases(prev => prev.map(p =>
           p.id === msg.phase
             ? { ...p, status: msg.status as any }
             : p
         ));
-        // Update corresponding file status to 'generating' if it is running
         if (msg.status === 'running' && msg.phase) {
           setFiles(prev => {
             const updated = new Map(prev);
@@ -207,6 +234,8 @@ export const CCSDDPage: React.FC<CCSDDPageProps> = ({ onClose }) => {
       case 'canvas_update':
         if (msg.canvasJson) {
           setCanvasJson(msg.canvasJson);
+          // Auto-render diagram on the canvas immediately
+          autoRenderCanvas(msg.canvasJson);
         }
         break;
 
@@ -218,6 +247,7 @@ export const CCSDDPage: React.FC<CCSDDPageProps> = ({ onClose }) => {
           phase: msg.phase,
           timestamp: Date.now(),
         }]);
+        setIsSending(false);
         break;
 
       case 'pipeline_complete':
@@ -236,7 +266,7 @@ export const CCSDDPage: React.FC<CCSDDPageProps> = ({ onClose }) => {
         setIsSending(false);
         break;
     }
-  }, []);
+  }, [autoRenderCanvas]);
 
   // ── Connect WebSocket ───────────────────────────────────────────────
   useEffect(() => {
@@ -270,24 +300,22 @@ export const CCSDDPage: React.FC<CCSDDPageProps> = ({ onClose }) => {
     });
     setFiles(initialFiles);
 
-    // If perfectly disconnected, fail immediately.
     if (!sddWebSocket.isConnected) {
       setChatMessages([{
         id: 'error-ws',
         type: 'error',
-        text: '❌ Connection to the CC-SDD AI Server is closed! Please ensure `python -m besser.utilities.ai_sdd.server` is running on port 8766.',
+        text: '❌ Connection to the CC-SDD AI Server is closed! Please ensure the SDD server is running on port 8766.',
         timestamp: Date.now(),
       }]);
       setPhases(prev => prev.map(p => ({ ...p, status: 'error' })));
-      setIsSending(false);
       return;
     }
 
-    sddWebSocket.startPipeline(idea.trim(), apiKey);
-  }, [apiKeyValid, idea, apiKey]);
+    sddWebSocket.startPipeline(idea.trim(), apiKey, outputDir.trim() || undefined);
+  }, [apiKeyValid, idea, apiKey, outputDir]);
 
-  // ── Send Vibe Message ───────────────────────────────────────────────
-  const handleSendVibeMessage = useCallback(() => {
+  // ── Send Chat Message (always active — agent decides intent) ────────
+  const handleSendMessage = useCallback(() => {
     const msg = chatInput.trim();
     if (!msg || isSending) return;
 
@@ -301,39 +329,19 @@ export const CCSDDPage: React.FC<CCSDDPageProps> = ({ onClose }) => {
     setIsSending(true);
     sddWebSocket.sendVibeMessage(msg);
     setChatInput('');
-    setTimeout(() => setIsSending(false), 30000);
   }, [chatInput, isSending]);
 
-  useEffect(() => {
-    const unsub = sddWebSocket.on('agent_message', (msg) => {
-      if (msg.phase === 'vibe') setIsSending(false);
-    });
-    return unsub;
-  }, []);
 
-  // ── Export to Canvas ────────────────────────────────────────────────
-  const handleExportToCanvas = useCallback(async () => {
-    if (!canvasJson) return;
-    
-    // Switch the workspace to ClassDiagram first ensuring the correct editor maps it
-    await dispatch(switchDiagramTypeThunk({ diagramType: 'ClassDiagram' }));
-    
-    // Overwrite the diagram model in Redux
-    await dispatch(updateDiagramModelThunk({ model: canvasJson }));
-    
-    // Close the sidebar to reveal the canvas
-    if (onClose) onClose();
-  }, [canvasJson, dispatch, onClose]);
 
   const handleChatKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSendVibeMessage();
+      handleSendMessage();
     }
-  }, [handleSendVibeMessage]);
+  }, [handleSendMessage]);
 
   // ══════════════════════════════════════════════════════════════════
-  // Render
+  // Render — Landing Page
   // ══════════════════════════════════════════════════════════════════
 
   if (!pipelineStarted) {
@@ -378,6 +386,23 @@ export const CCSDDPage: React.FC<CCSDDPageProps> = ({ onClose }) => {
               <div className={`text-xs mt-2 ${apiKeyValid ? 'text-emerald-500' : 'text-amber-500'}`}>
                 {apiKeyValid ? '✅ API key configured' : '⚠️ Enter a valid Gemini API key to continue'}
               </div>
+
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-2 mt-4">
+                📁 Output Directory <span className="text-muted-foreground/60 normal-case font-normal">(optional)</span>
+              </label>
+              <input
+                type="text"
+                className="w-full px-3 py-2 bg-background border border-border rounded-md font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                value={outputDir}
+                onChange={(e) => setOutputDir(e.target.value)}
+                placeholder="C:\\Users\\User\\Documents\\MyProject"
+                id="sdd-output-dir-input"
+              />
+              <div className="text-xs mt-1.5 text-muted-foreground">
+                {outputDir.trim()
+                  ? '📂 Files will be saved to this directory'
+                  : '💡 Leave empty to keep files in memory only'}
+              </div>
             </div>
 
             <div className="w-full">
@@ -404,6 +429,10 @@ export const CCSDDPage: React.FC<CCSDDPageProps> = ({ onClose }) => {
     );
   }
 
+  // ══════════════════════════════════════════════════════════════════
+  // Render — Pipeline Active
+  // ══════════════════════════════════════════════════════════════════
+
   const activeFileData = activeFile ? files.get(activeFile) : null;
 
   return (
@@ -428,15 +457,6 @@ export const CCSDDPage: React.FC<CCSDDPageProps> = ({ onClose }) => {
           )}
         </div>
         <div className="flex items-center gap-1.5">
-          {canvasJson && (
-            <button
-              className="px-2 py-1 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded text-xs font-semibold transition-colors flex items-center gap-1"
-              onClick={handleExportToCanvas}
-              id="sdd-export-canvas"
-            >
-              <span>🎨</span> Export Canvas
-            </button>
-          )}
           <button
             className="px-2 py-1 bg-card hover:bg-accent border border-border rounded text-xs font-medium transition-colors"
             onClick={() => setPipelineStarted(false)}
@@ -457,8 +477,10 @@ export const CCSDDPage: React.FC<CCSDDPageProps> = ({ onClose }) => {
             <div key={phase.id} className="flex items-center shrink-0">
               <div
                 className={`flex items-center gap-1.5 px-2 py-1 rounded-md border text-xs whitespace-nowrap transition-colors ${
-                  phase.status === 'active' || phase.status === 'running'
-                    ? 'bg-primary/10 border-primary/30 text-primary'
+                  phase.status === 'running'
+                    ? 'bg-primary/10 border-primary/30 text-primary animate-pulse'
+                    : phase.status === 'ready'
+                    ? 'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400'
                     : phase.status === 'completed'
                     ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
                     : phase.status === 'error'
@@ -467,7 +489,10 @@ export const CCSDDPage: React.FC<CCSDDPageProps> = ({ onClose }) => {
                 }`}
               >
                 <span>
-                  {phase.status === 'completed' ? '✓' : phase.status === 'running' ? '⟳' : phase.status === 'error' ? '✕' : phase.icon}
+                  {phase.status === 'completed' ? '✓' :
+                   phase.status === 'running' ? '⟳' :
+                   phase.status === 'ready' ? '💬' :
+                   phase.status === 'error' ? '✕' : phase.icon}
                 </span>
                 <span className="font-medium">{phase.label}</span>
               </div>
@@ -509,10 +534,10 @@ export const CCSDDPage: React.FC<CCSDDPageProps> = ({ onClose }) => {
           </div>
         </div>
 
-        {/* Vibe Modeling Chat */}
+        {/* Chat — ALWAYS active (agent decides intent) */}
         <div className="flex flex-col flex-1 min-h-0 bg-background relative">
           <div className="p-2 border-b border-border bg-muted/20 text-xs font-semibold text-foreground flex items-center justify-between">
-            <span>💬 {pipelineComplete ? 'Vibe Modeling' : 'Pipeline Log'}</span>
+            <span>💬 {pipelineComplete ? 'Vibe Modeling' : 'Pipeline Chat'}</span>
             {pipelineComplete && (
               <span className="bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 text-[10px] rounded animate-pulse">
                 LIVE
@@ -539,29 +564,30 @@ export const CCSDDPage: React.FC<CCSDDPageProps> = ({ onClose }) => {
             <div ref={chatEndRef} />
           </div>
 
-          {pipelineComplete && (
-            <div className="p-3 border-t border-border bg-card shrink-0">
-              <div className="flex items-end gap-1.5 bg-background border border-border rounded-sm focus-within:ring-1 focus-within:ring-primary/50 overflow-hidden pr-1">
-                <textarea
-                  ref={chatInputRef}
-                  className="w-full max-h-32 min-h-[32px] bg-transparent text-xs p-1.5 resize-none focus:outline-none"
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  onKeyDown={handleChatKeyDown}
-                  placeholder={'Instruct the agent...\n(e.g. "Add email to User")'}
-                  rows={2}
-                  disabled={isSending}
-                />
-                <button
-                  className="mb-1.5 mr-1 p-1.5 text-primary hover:bg-primary/10 rounded-md transition-colors disabled:opacity-50"
-                  onClick={handleSendVibeMessage}
-                  disabled={!chatInput.trim() || isSending}
-                >
-                  {isSending ? '⟳' : '➤'}
-                </button>
-              </div>
+          {/* Chat input — ALWAYS visible once pipeline starts */}
+          <div className="p-3 border-t border-border bg-card shrink-0">
+            <div className="flex items-end gap-1.5 bg-background border border-border rounded-sm focus-within:ring-1 focus-within:ring-primary/50 overflow-hidden pr-1">
+              <textarea
+                ref={chatInputRef}
+                className="w-full max-h-32 min-h-[32px] bg-transparent text-xs p-1.5 resize-none focus:outline-none"
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={handleChatKeyDown}
+                placeholder={pipelineComplete
+                  ? 'Modify diagram or requirements... (e.g. "Add email to User")'
+                  : 'Type "ok" to continue, or describe changes...'}
+                rows={2}
+                disabled={isSending}
+              />
+              <button
+                className="mb-1.5 mr-1 p-1.5 text-primary hover:bg-primary/10 rounded-md transition-colors disabled:opacity-50"
+                onClick={handleSendMessage}
+                disabled={!chatInput.trim() || isSending}
+              >
+                {isSending ? '⟳' : '➤'}
+              </button>
             </div>
-          )}
+          </div>
         </div>
       </div>
 
@@ -584,24 +610,14 @@ export const CCSDDPage: React.FC<CCSDDPageProps> = ({ onClose }) => {
 
           <div className="flex-1 overflow-y-auto p-8">
             {canvasJson && activeFile === 'design.md' && (
-              <div className="mb-6 p-4 bg-primary/10 border border-primary/20 rounded-lg flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <span className="text-2xl">🎨</span>
-                  <div>
-                    <h3 className="text-primary font-semibold">BUML Class Diagram Ready</h3>
-                    <p className="text-sm text-foreground/80">You can export this to your BESSER workspace to continue modeling manually.</p>
-                  </div>
+              <div className="mb-6 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-lg flex items-center gap-3">
+                <span className="text-2xl">✅</span>
+                <div>
+                  <h3 className="text-emerald-600 dark:text-emerald-400 font-semibold">Class Diagram Rendered on Canvas</h3>
+                  <p className="text-sm text-foreground/80">
+                    {canvasJson?.classes?.length || 0} classes, {canvasJson?.relationships?.length || 0} relationships — close this viewer to see them.
+                  </p>
                 </div>
-                <button
-                  className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-md font-medium shadow-sm"
-                  onClick={(e) => {
-                    handleExportToCanvas();
-                    // Auto-close viewer when exported so user can see the canvas immediately
-                    setActiveFile(null); 
-                  }}
-                >
-                  Export to Canvas →
-                </button>
               </div>
             )}
 

@@ -119,6 +119,10 @@ export class SDDWebSocketService {
     this.send({ type: 'vibe_message', message });
   }
 
+  sendDiagramUpdate(canvasJson: any): void {
+    this.send({ type: 'update_diagram', canvasJson });
+  }
+
   requestFile(filename: string): void {
     this.send({ type: 'get_file', filename });
   }

@@ -1,9 +1,14 @@
 """
 CC-SDD WebSocket Server — Real-time communication between the frontend
-and the SDD pipeline agents.
+and the interactive SDD pipeline.
 
 Runs on port 8766 (separate from the modeling agent on 8765).
-Handles pipeline execution, vibe modeling, and file updates via WebSocket.
+
+Supports:
+- Pipeline start with phase-by-phase execution
+- Approve / iterate / reject phases
+- Vibe modeling (natural language modifications)
+- Manual diagram update → bidirectional traceability sync
 """
 
 import asyncio
@@ -12,24 +17,17 @@ import logging
 import os
 import sys
 
-# Ensure the BESSER package is importable
-_PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
-if _PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, _PROJECT_ROOT)
-
 try:
     import websockets
     from websockets.server import serve as ws_serve
 except ImportError:
-    # Fallback: try asyncio-based websockets
     websockets = None
 
-from besser.utilities.ai_sdd.pipeline import SDDPipeline, SDDProject
+from .pipeline import SDDPipeline
 
 logger = logging.getLogger(__name__)
 
-# Active sessions: ws_id -> SDDProject
-_sessions: dict[str, SDDProject] = {}
+# Active pipelines per WebSocket connection
 _pipelines: dict[str, SDDPipeline] = {}
 
 SDD_WS_PORT = int(os.environ.get("SDD_WS_PORT", "8766"))
@@ -43,131 +41,84 @@ async def _send_json(ws, data: dict) -> None:
         logger.warning(f"[SDD-WS] Failed to send message: {e}")
 
 
+def _make_sender(ws):
+    """Create a send callback bound to a specific WebSocket connection."""
+    async def sender(msg: dict) -> None:
+        await _send_json(ws, msg)
+    return sender
+
+
+# ── Message Handlers ───────────────────────────────────────────────────
+
 async def _handle_start_pipeline(ws, ws_id: str, msg: dict) -> None:
-    """Handle a start_pipeline message — run the full SDD pipeline."""
+    """Handle start_pipeline — begin interactive SDD flow."""
     idea = msg.get("idea", "").strip()
     api_key = msg.get("apiKey", "").strip()
+    output_dir = msg.get("outputDir", "").strip() or None
 
     if not idea:
-        await _send_json(ws, {"type": "error", "message": "No idea provided.", "phase": ""})
+        await _send_json(ws, {"type": "error", "message": "No idea provided."})
         return
-
     if not api_key:
-        await _send_json(ws, {"type": "error", "message": "No API key configured.", "phase": ""})
+        await _send_json(ws, {"type": "error", "message": "No API key configured."})
         return
 
-    # Create pipeline and project
-    pipeline = SDDPipeline(api_key)
+    pipeline = SDDPipeline(api_key=api_key, send_message=_make_sender(ws), output_dir=output_dir)
     _pipelines[ws_id] = pipeline
 
-    # Define async callbacks that forward events to the WebSocket client
-    async def on_status(phase: str, status: str, message: str):
-        await _send_json(ws, {
-            "type": "pipeline_status",
-            "phase": phase,
-            "status": status,
-            "message": message,
-        })
+    try:
+        await pipeline.start_pipeline(idea)
+    except Exception as e:
+        logger.error(f"[SDD-WS] Pipeline start failed: {e}", exc_info=True)
+        await _send_json(ws, {"type": "error", "message": f"Pipeline failed: {e}"})
 
-    async def on_file(filename: str, content: str):
-        await _send_json(ws, {
-            "type": "file_update",
-            "filename": filename,
-            "content": content,
-        })
 
-    async def on_canvas(canvas_json: dict):
-        await _send_json(ws, {
-            "type": "canvas_update",
-            "canvasJson": canvas_json,
-        })
+async def _handle_user_message(ws, ws_id: str, msg: dict) -> None:
+    """Handle user_message — the pipeline agent decides what to do."""
+    pipeline = _pipelines.get(ws_id)
+    if not pipeline:
+        await _send_json(ws, {"type": "error", "message": "No active project."})
+        return
 
-    async def on_message(phase: str, message: str):
-        await _send_json(ws, {
-            "type": "agent_message",
-            "phase": phase,
-            "message": message,
-        })
+    message = msg.get("message", "").strip()
+    if not message:
+        await _send_json(ws, {"type": "error", "message": "No message provided."})
+        return
 
     try:
-        project = await pipeline.run_pipeline(
-            idea=idea,
-            on_status=on_status,
-            on_file=on_file,
-            on_canvas=on_canvas,
-            on_message=on_message,
-        )
-        _sessions[ws_id] = project
-
-        await _send_json(ws, {
-            "type": "pipeline_complete",
-            "projectName": project.name,
-            "files": list(project.get_files().keys()),
-        })
-
+        await pipeline.handle_user_message(message)
     except Exception as e:
-        logger.error(f"[SDD-WS] Pipeline failed: {e}", exc_info=True)
-        await _send_json(ws, {
-            "type": "error",
-            "message": f"Pipeline failed: {str(e)}",
-            "phase": "pipeline",
-        })
+        logger.error(f"[SDD-WS] User message failed: {e}", exc_info=True)
+        await _send_json(ws, {"type": "error", "message": f"Error: {e}"})
 
 
-async def _handle_vibe_message(ws, ws_id: str, msg: dict) -> None:
-    """Handle a vibe_message — modify the project via natural language."""
-    instruction = msg.get("message", "").strip()
-
-    if not instruction:
-        await _send_json(ws, {"type": "error", "message": "No instruction provided.", "phase": "vibe"})
-        return
-
-    project = _sessions.get(ws_id)
+async def _handle_diagram_update(ws, ws_id: str, msg: dict) -> None:
+    """Handle update_diagram — manual diagram changes from the canvas."""
     pipeline = _pipelines.get(ws_id)
-
-    if not project or not pipeline:
-        await _send_json(ws, {
-            "type": "error",
-            "message": "No active project. Please run the pipeline first.",
-            "phase": "vibe",
-        })
+    if not pipeline:
+        await _send_json(ws, {"type": "error", "message": "No active project."})
         return
 
-    async def on_file(filename: str, content: str):
-        await _send_json(ws, {"type": "file_update", "filename": filename, "content": content})
-
-    async def on_canvas(canvas_json: dict):
-        await _send_json(ws, {"type": "canvas_update", "canvasJson": canvas_json})
-
-    async def on_message(phase: str, message: str):
-        await _send_json(ws, {"type": "agent_message", "phase": phase, "message": message})
-
-    await pipeline.handle_vibe_message(
-        project=project,
-        instruction=instruction,
-        on_file=on_file,
-        on_canvas=on_canvas,
-        on_message=on_message,
-    )
-
-
-async def _handle_get_file(ws, ws_id: str, msg: dict) -> None:
-    """Handle a get_file request — return a specific file's content."""
-    filename = msg.get("filename", "")
-    project = _sessions.get(ws_id)
-
-    if not project:
-        await _send_json(ws, {"type": "error", "message": "No active project.", "phase": ""})
+    canvas_json = msg.get("canvasJson")
+    if not canvas_json:
+        await _send_json(ws, {"type": "error", "message": "No diagram data provided."})
         return
 
-    files = project.get_files()
-    content = files.get(filename, "")
+    try:
+        await pipeline.handle_diagram_update(canvas_json)
+    except Exception as e:
+        logger.error(f"[SDD-WS] Diagram update failed: {e}", exc_info=True)
+        await _send_json(ws, {"type": "error", "message": f"Diagram sync failed: {e}"})
 
-    await _send_json(ws, {
-        "type": "file_content",
-        "filename": filename,
-        "content": content,
-    })
+
+# ── WebSocket Handler ──────────────────────────────────────────────────
+
+_MESSAGE_HANDLERS = {
+    "start_pipeline": _handle_start_pipeline,
+    "vibe_message": _handle_user_message,       # All user messages → agent router
+    "user_message": _handle_user_message,        # Alias
+    "update_diagram": _handle_diagram_update,
+}
 
 
 async def _handler(ws) -> None:
@@ -185,39 +136,32 @@ async def _handler(ws) -> None:
             try:
                 msg = json.loads(raw_message)
             except json.JSONDecodeError:
-                await _send_json(ws, {"type": "error", "message": "Invalid JSON.", "phase": ""})
+                await _send_json(ws, {"type": "error", "message": "Invalid JSON."})
                 continue
 
             msg_type = msg.get("type", "")
 
-            if msg_type == "start_pipeline":
-                # Run pipeline in a task so we don't block the WS reader
-                asyncio.create_task(_handle_start_pipeline(ws, ws_id, msg))
-
-            elif msg_type == "vibe_message":
-                asyncio.create_task(_handle_vibe_message(ws, ws_id, msg))
-
-            elif msg_type == "get_file":
-                await _handle_get_file(ws, ws_id, msg)
-
-            elif msg_type == "ping":
+            if msg_type == "ping":
                 await _send_json(ws, {"type": "pong"})
+                continue
 
+            handler = _MESSAGE_HANDLERS.get(msg_type)
+            if handler:
+                asyncio.create_task(handler(ws, ws_id, msg))
             else:
                 await _send_json(ws, {
                     "type": "error",
                     "message": f"Unknown message type: {msg_type}",
-                    "phase": "",
                 })
 
     except Exception as e:
         logger.info(f"[SDD-WS] Client disconnected: {ws_id} ({e})")
     finally:
-        # Clean up session on disconnect
-        _sessions.pop(ws_id, None)
         _pipelines.pop(ws_id, None)
         logger.info(f"[SDD-WS] Session cleaned up: {ws_id}")
 
+
+# ── Server Entry ───────────────────────────────────────────────────────
 
 async def _main():
     """Start the SDD WebSocket server."""

@@ -1,9 +1,12 @@
 """
 Traceability Agent — Phase 4 of the CC-SDD Pipeline.
 
-Generates and maintains traceability.md — a comprehensive change log and
-cross-reference matrix that ensures bidirectional mapping between
-Business Rules ↔ Requirements ↔ Design Classes.
+Generates and maintains traceability.md — a comprehensive cross-reference
+matrix that ensures bidirectional mapping between
+Requirements ↔ Design Classes ↔ Acceptance Criteria.
+
+Also provides reconciliation: when the diagram changes manually, this
+agent updates the requirements to match.
 """
 
 import logging
@@ -14,71 +17,85 @@ logger = logging.getLogger(__name__)
 
 TRACEABILITY_SYSTEM_PROMPT = """You are an expert Traceability & Audit agent in a Spec-Driven Development (SDD) pipeline.
 Your role is to generate and maintain a traceability document that ensures full bidirectional mapping
-between Business Rules, Requirements, and Design Classes.
+between Requirements (numbered, EARS format) and Design Classes.
 
 You MUST generate the output in the EXACT format specified below. Follow the template precisely.
 Do NOT add markdown code fences around the output — return the markdown directly.
 
 ## TEMPLATE:
 
-# Traceability Log: {ProjectName}
+# Traceability Matrix: {ProjectName}
 Last Updated: {Date}
 
 ## 1. Change History
 
-| # | Date | Type | Element | From | To | Affected BR/REQ | Agent |
-|---|------|------|---------|------|----|-----------------|-------|
-| 1 | {date} | CREATED | {element} | — | {new value} | {BR/REQ IDs} | system |
+| # | Date | Type | Element | Description | Affected Requirements | Agent |
+|---|------|------|---------|-------------|-----------------------|-------|
+| 1 | {date} | CREATED | {element} | {description} | Req 1, Req 3 | system |
 
-## 2. BR → REQ Coverage Matrix
+## 2. Requirement → Design (Class) Coverage Matrix
 
-| Business Rule | Associated Requirements | Coverage Status |
-| :--- | :--- | :--- |
-| **BR-001** | REQ-001, REQ-002 | ✅ Covered |
+| Requirement | Objective | Associated Classes | Coverage Status |
+| :--- | :--- | :--- | :--- |
+| **Requirement 1** | {Short objective} | ClassName1, ClassName2 | ✅ Implemented |
+| **Requirement 2** | {Short objective} | ClassName3 | ✅ Implemented |
 
-## 3. REQ → Design (Class) Coverage Matrix
+## 3. Design (Class) → Requirement Reverse Trace
 
-| Requirement | Associated Classes | Coverage Status |
-| :--- | :--- | :--- |
-| **REQ-001** | ClassName1, ClassName2 | ✅ Implemented |
+| Class | Attributes | Derived from Requirements | Trace Status |
+| :--- | :--- | :--- | :--- |
+| **ClassName1** | attr1, attr2 | Requirement 1, Requirement 3 | ✅ Traced |
 
-## 4. Design (Class) → REQ Reverse Trace
+## 4. Acceptance Criteria Coverage
 
-| Class | Derived from Requirements | Trace Status |
-| :--- | :--- | :--- |
-| **ClassName1** | REQ-001, REQ-003 | ✅ Traced |
+| Requirement | Total Criteria | Criteria Traceable to Design | Coverage |
+| :--- | :--- | :--- | :--- |
+| **Requirement 1** | 5 | 5 | 100% |
+| **Requirement 2** | 3 | 3 | 100% |
 
 ## 5. Orphan Analysis
 
-### Orphan Business Rules (BR without REQ)
-{List any BRs that don't map to any REQ, or "None — all business rules are covered."}
+### Orphan Requirements (without Design Class)
+{List any requirements that don't map to any class, or "None — all requirements are implemented."}
 
-### Orphan Requirements (REQ without Design Class)
-{List any REQs that don't map to any class, or "None — all requirements are implemented."}
-
-### Orphan Classes (Class without REQ)
-{List any classes that don't trace to any REQ, or "None — all classes are justified."}
+### Orphan Classes (without Requirement)
+{List any classes that don't trace to any requirement, or "None — all classes are justified."}
 
 ## 6. Coverage Summary
 
 | Metric | Value |
 | :--- | :--- |
-| Total Business Rules | {N} |
 | Total Requirements | {N} |
 | Total Design Classes | {N} |
-| BR Coverage | {X/N} ({%}) |
-| REQ Implementation | {X/N} ({%}) |
+| Requirement Implementation | {X/N} ({%}) |
 | Class Traceability | {X/N} ({%}) |
 | Orphan Count | {N} |
 
 ## RULES:
-1. Parse ALL BRs from requirements.md and ALL classes from design.md.
+1. Parse ALL numbered requirements from requirements.md and ALL classes from the design JSON.
 2. Cross-reference to build complete bidirectional mappings.
 3. Identify and flag any orphans (elements without mappings).
 4. The change history should record initial creation entries for all elements.
 5. Coverage percentages must be accurate.
-6. Write everything in English.
-7. Output ONLY the markdown document, nothing else.
+6. Detect the language used in the requirements. Write the document in that same language.
+7. Requirements use numbered IDs (Requirement 1, Requirement 2, ...), NOT BR/REQ codes.
+8. Output ONLY the markdown document, nothing else.
+"""
+
+RECONCILE_SYSTEM_PROMPT = """You are an expert Requirements Reconciliation agent.
+Your role is to update requirements to reflect manual diagram changes, maintaining
+full traceability with the EARS (Easy Approach to Requirements Syntax) format.
+
+When diagram classes/attributes/relationships change, you must:
+1. Add new Requirements for new classes/concepts if needed.
+2. Modify existing Requirements if class attributes changed.
+3. Remove Requirements that correspond to deleted classes/features.
+4. Update all requirement numbering to maintain sequential order.
+5. Preserve the original language and EARS format.
+6. EARS keywords (When, If, While, Where, shall, the system) must remain in English.
+7. All other content follows the language of the existing requirements.
+
+Output the COMPLETE updated requirements.md, not just changes.
 """
 
 
@@ -94,16 +111,7 @@ class TraceabilityAgent:
         design_content: str,
         project_name: str,
     ) -> str:
-        """Generate initial traceability.md from requirements and design documents.
-
-        Args:
-            requirements_content: Full text of requirements.md.
-            design_content: Full text of design.md.
-            project_name: The project name.
-
-        Returns:
-            The traceability.md content.
-        """
+        """Generate initial traceability.md from requirements and design documents."""
         today = datetime.now().strftime("%Y-%m-%d %H:%M")
 
         prompt = (
@@ -114,11 +122,10 @@ class TraceabilityAgent:
             f"Project Name: {project_name}\n"
             f"Current Date/Time: {today}\n\n"
             f"Generate the complete traceability document. Ensure:\n"
-            f"1. Every BR maps to at least one REQ.\n"
-            f"2. Every REQ maps to at least one class.\n"
-            f"3. Every class traces back to at least one REQ.\n"
-            f"4. Identify and flag any orphans.\n"
-            f"5. Include initial CREATED entries in the change history for all elements."
+            f"1. Every requirement maps to at least one class.\n"
+            f"2. Every class traces back to at least one requirement.\n"
+            f"3. Identify and flag any orphans.\n"
+            f"4. Include initial CREATED entries in the change history for all elements."
         )
 
         logger.info("[TraceabilityAgent] Generating traceability.md...")
@@ -138,17 +145,7 @@ class TraceabilityAgent:
         requirements_content: str,
         design_content: str,
     ) -> str:
-        """Update traceability.md to reflect a change.
-
-        Args:
-            current_traceability: Current traceability.md content.
-            change_description: What changed and why.
-            requirements_content: Updated requirements.md.
-            design_content: Updated design.md.
-
-        Returns:
-            Updated traceability.md content.
-        """
+        """Update traceability.md to reflect a change."""
         today = datetime.now().strftime("%Y-%m-%d %H:%M")
 
         prompt = (
@@ -172,6 +169,40 @@ class TraceabilityAgent:
         content = self.client.generate(
             prompt=prompt,
             system_instruction=TRACEABILITY_SYSTEM_PROMPT,
+            temperature=0.3,
+        )
+        return content
+
+    def reconcile_requirements(
+        self,
+        changes_description: str,
+        current_requirements: str,
+    ) -> str:
+        """Update requirements to reflect manual diagram changes.
+
+        This is the "diagram → requirements" direction of bidirectional
+        traceability. When the user edits the class diagram directly,
+        this method updates the requirements document to stay in sync.
+        """
+        prompt = (
+            f"The user made manual changes to the class diagram. "
+            f"Update the requirements document to reflect these changes.\n\n"
+            f"--- DIAGRAM CHANGES ---\n{changes_description}\n--- END ---\n\n"
+            f"--- CURRENT REQUIREMENTS ---\n{current_requirements}\n--- END ---\n\n"
+            f"Rules:\n"
+            f"1. If a new class was added, create corresponding Requirements with EARS acceptance criteria.\n"
+            f"2. If attributes were added to a class, add acceptance criteria for the new capabilities.\n"
+            f"3. If a class was removed, remove its corresponding Requirements.\n"
+            f"4. If relationships changed, update Requirements to reflect new interactions.\n"
+            f"5. Maintain EARS format for all acceptance criteria.\n"
+            f"6. Keep existing numbering stable — only add new requirements at the end.\n"
+            f"7. Output the COMPLETE updated requirements.md document."
+        )
+
+        logger.info("[TraceabilityAgent] Reconciling requirements from diagram changes...")
+        content = self.client.generate(
+            prompt=prompt,
+            system_instruction=RECONCILE_SYSTEM_PROMPT,
             temperature=0.3,
         )
         return content

@@ -20,7 +20,7 @@ interface PipelinePhase {
   id: string;
   label: string;
   icon: string;
-  status: 'pending' | 'running' | 'completed' | 'error';
+  status: 'pending' | 'running' | 'completed' | 'ready' | 'error';
 }
 
 interface ChatMessage {
@@ -123,7 +123,7 @@ function renderChatMd(text: string): string {
 const INITIAL_PHASES: PipelinePhase[] = [
   { id: 'brief', label: 'Brief', icon: '📝', status: 'pending' },
   { id: 'requirements', label: 'Requirements', icon: '📋', status: 'pending' },
-  { id: 'design', label: 'Design (BUML)', icon: '🏗️', status: 'pending' },
+  { id: 'design', label: 'Design', icon: '🏗️', status: 'pending' },
   { id: 'traceability', label: 'Traceability', icon: '🔗', status: 'pending' },
 ];
 
@@ -184,6 +184,17 @@ export const CCSDDPage: React.FC = () => {
             ? { ...p, status: msg.status as any }
             : p
         ));
+        if (msg.status === 'running' && msg.phase) {
+          setFiles(prev => {
+            const updated = new Map(prev);
+            const fileName = `${msg.phase}.md`;
+            const file = updated.get(fileName);
+            if (file && file.status === 'pending') {
+              updated.set(fileName, { ...file, status: 'generating' });
+            }
+            return updated;
+          });
+        }
         break;
 
       case 'file_update':
@@ -199,7 +210,6 @@ export const CCSDDPage: React.FC = () => {
             });
             return updated;
           });
-          // Auto-open the first generated file
           setActiveFile(prev => prev || msg.filename!);
         }
         break;
@@ -207,6 +217,11 @@ export const CCSDDPage: React.FC = () => {
       case 'canvas_update':
         if (msg.canvasJson) {
           setCanvasJson(msg.canvasJson);
+          // Auto-render diagram to canvas
+          localStorage.setItem('sdd_canvas_import', JSON.stringify(msg.canvasJson));
+          setTimeout(() => {
+            window.dispatchEvent(new CustomEvent('sdd-canvas-import', { detail: msg.canvasJson }));
+          }, 200);
         }
         break;
 
@@ -218,6 +233,7 @@ export const CCSDDPage: React.FC = () => {
           phase: msg.phase,
           timestamp: Date.now(),
         }]);
+        setIsSending(false);
         break;
 
       case 'pipeline_complete':
@@ -276,8 +292,8 @@ export const CCSDDPage: React.FC = () => {
     sddWebSocket.startPipeline(idea.trim(), apiKey);
   }, [apiKeyValid, idea, apiKey]);
 
-  // ── Send Vibe Message ───────────────────────────────────────────────
-  const handleSendVibeMessage = useCallback(() => {
+  // ── Send Chat Message (always active — agent decides intent) ────────
+  const handleSendMessage = useCallback(() => {
     const msg = chatInput.trim();
     if (!msg || isSending) return;
 
@@ -291,20 +307,7 @@ export const CCSDDPage: React.FC = () => {
     setIsSending(true);
     sddWebSocket.sendVibeMessage(msg);
     setChatInput('');
-
-    // Reset sending state after timeout (safety)
-    setTimeout(() => setIsSending(false), 30000);
   }, [chatInput, isSending]);
-
-  // Clear sending state when agent responds
-  useEffect(() => {
-    const unsub = sddWebSocket.on('agent_message', (msg) => {
-      if (msg.phase === 'vibe') {
-        setIsSending(false);
-      }
-    });
-    return unsub;
-  }, []);
 
   // ── Export to Canvas ────────────────────────────────────────────────
   const handleExportToCanvas = useCallback(() => {
@@ -324,9 +327,9 @@ export const CCSDDPage: React.FC = () => {
   const handleChatKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSendVibeMessage();
+      handleSendMessage();
     }
-  }, [handleSendVibeMessage]);
+  }, [handleSendMessage]);
 
   // ══════════════════════════════════════════════════════════════════
   // Render
@@ -416,7 +419,7 @@ export const CCSDDPage: React.FC = () => {
         <div className="sdd-header-actions">
           {canvasJson && (
             <button className="sdd-btn sdd-btn-primary" onClick={handleExportToCanvas} id="sdd-export-canvas">
-              🎨 Export BUML to Canvas
+              🎨 Export to Canvas
             </button>
           )}
           <button className="sdd-btn" onClick={() => { setPipelineStarted(false); }} id="sdd-new-project">
@@ -440,6 +443,7 @@ export const CCSDDPage: React.FC = () => {
                       <div className="sdd-step-indicator">
                         {phase.status === 'completed' ? '✓' :
                          phase.status === 'running' ? '⟳' :
+                         phase.status === 'ready' ? '⏸' :
                          phase.status === 'error' ? '✕' :
                          (idx + 1)}
                       </div>
@@ -499,7 +503,7 @@ export const CCSDDPage: React.FC = () => {
               {/* Canvas export banner */}
               {canvasJson && activeFile === 'design.md' && (
                 <div className="sdd-canvas-banner">
-                  🎨 BUML class diagram ready for canvas export
+                  🎨 Class diagram ready — {canvasJson?.classes?.length || 0} classes, {canvasJson?.relationships?.length || 0} relationships
                   <button className="sdd-btn" onClick={handleExportToCanvas}>
                     Export to Canvas →
                   </button>
@@ -549,8 +553,7 @@ export const CCSDDPage: React.FC = () => {
               <div ref={chatEndRef} />
             </div>
 
-            {/* Chat input — only visible after pipeline completes */}
-            {pipelineComplete && (
+            {/* Chat input — ALWAYS visible */}
               <div className="sdd-chat-input-area">
                 <div className="sdd-chat-input-wrapper">
                   <textarea
@@ -559,14 +562,16 @@ export const CCSDDPage: React.FC = () => {
                     value={chatInput}
                     onChange={(e) => setChatInput(e.target.value)}
                     onKeyDown={handleChatKeyDown}
-                    placeholder="Modify diagram or requirements... &#10;e.g., &quot;Add an email attribute to User&quot;"
+                    placeholder={pipelineComplete
+                      ? 'Modify diagram or requirements... (e.g. "Add email to User")'
+                      : 'Type "ok" to continue, or describe changes...'}
                     rows={1}
                     disabled={isSending}
                     id="sdd-vibe-input"
                   />
                   <button
                     className="sdd-chat-send"
-                    onClick={handleSendVibeMessage}
+                    onClick={handleSendMessage}
                     disabled={!chatInput.trim() || isSending}
                     id="sdd-vibe-send"
                   >
@@ -574,7 +579,6 @@ export const CCSDDPage: React.FC = () => {
                   </button>
                 </div>
               </div>
-            )}
           </div>
         </div>
       </div>

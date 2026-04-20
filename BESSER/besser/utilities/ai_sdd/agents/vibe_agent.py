@@ -1,8 +1,10 @@
 """
 Vibe Modeling Agent — Interactive modification agent for CC-SDD.
 
-Handles natural language instructions to modify the BUML class diagram and/or
+Handles natural language instructions to modify the class diagram JSON and/or
 requirements, maintaining full bidirectional traceability.
+
+Works with BESSER SystemClassSpec JSON format instead of B-UML markdown.
 """
 
 import logging
@@ -12,11 +14,11 @@ logger = logging.getLogger(__name__)
 
 VIBE_SYSTEM_PROMPT = """You are an expert Vibe Modeling agent in a Spec-Driven Development (SDD) pipeline.
 Your role is to interpret natural language instructions and determine what changes need to be made
-to the design (BUML class diagram) AND/OR requirements.
+to the design (class diagram JSON) AND/OR requirements.
 
 You receive the current state of:
-1. requirements.md (business rules and requirements)
-2. design.md (BUML class diagram and traceability)
+1. requirements.md (business rules and requirements in EARS format)
+2. The class diagram as a JSON object (SystemClassSpec format with classes and relationships)
 
 The user will give you an instruction like:
 - "Add an email attribute to User class"
@@ -52,7 +54,8 @@ You MUST respond with a JSON object describing the changes:
 2. If the user modifies requirements or business rules, you MUST also determine if the design needs updating.
 3. Always maintain bidirectional traceability: every class must map to a REQ, every REQ to a BR.
 4. The chat_response should be friendly and informative, confirming what was changed.
-5. Respond ONLY with the JSON object, no extra text.
+5. Detect the language used in the input. Write the chat_response in that same language.
+6. Respond ONLY with the JSON object, no extra text.
 """
 
 
@@ -73,7 +76,7 @@ class VibeAgent:
         Args:
             instruction: The user's natural language instruction.
             requirements_content: Current requirements.md content.
-            design_content: Current design.md content.
+            design_content: Current design JSON as string (SystemClassSpec).
 
         Returns:
             A dict describing the changes to make.
@@ -82,7 +85,7 @@ class VibeAgent:
             f"The user gives this instruction:\n\n"
             f'"{instruction}"\n\n'
             f"--- CURRENT REQUIREMENTS ---\n{requirements_content}\n--- END ---\n\n"
-            f"--- CURRENT DESIGN ---\n{design_content}\n--- END ---\n\n"
+            f"--- CURRENT CLASS DIAGRAM JSON ---\n{design_content}\n--- END ---\n\n"
             f"Analyze this instruction and return the JSON object describing all changes needed. "
             f"Remember: every design change may require a requirements update and vice versa."
         )

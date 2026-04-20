@@ -109,12 +109,16 @@ export class SDDWebSocketService {
     this.ws.send(JSON.stringify(data));
   }
 
-  startPipeline(idea: string, apiKey: string): void {
-    this.send({ type: 'start_pipeline', idea, apiKey });
+  startPipeline(idea: string, apiKey: string, outputDir?: string): void {
+    this.send({ type: 'start_pipeline', idea, apiKey, outputDir: outputDir || '' });
   }
 
   sendVibeMessage(message: string): void {
     this.send({ type: 'vibe_message', message });
+  }
+
+  sendDiagramUpdate(canvasJson: any): void {
+    this.send({ type: 'update_diagram', canvasJson });
   }
 
   requestFile(filename: string): void {

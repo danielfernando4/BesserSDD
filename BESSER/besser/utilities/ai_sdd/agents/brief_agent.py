@@ -58,7 +58,7 @@ Generated: {Date}
 3. Scope items must be concrete and actionable.
 4. Success criteria must be measurable.
 5. Do NOT include implementation details or technology choices — that comes later.
-6. Write everything in English.
+6. Detect the language of the user's idea. Write the entire document in that same language. However, the ProjectName must always be in English PascalCase.
 7. Output ONLY the markdown document, nothing else.
 """
 
@@ -69,11 +69,11 @@ class BriefAgent:
     def __init__(self, client: GeminiClient):
         self.client = client
 
-    def generate(self, user_idea: str) -> tuple[str, str]:
+    def generate(self, user_idea: str) -> str:
         """Generate a brief.md document from the user's idea.
 
         Returns:
-            A tuple of (project_name, brief_content).
+            The brief.md content as a string.
         """
         today = datetime.now().strftime("%Y-%m-%d")
 
@@ -92,11 +92,8 @@ class BriefAgent:
             temperature=0.7,
         )
 
-        # Extract project name from the generated content
-        project_name = self._extract_project_name(content)
-        logger.info(f"[BriefAgent] Generated brief for project: {project_name}")
-
-        return project_name, content
+        logger.info("[BriefAgent] Generated brief.md successfully.")
+        return content
 
     @staticmethod
     def _extract_project_name(content: str) -> str:
