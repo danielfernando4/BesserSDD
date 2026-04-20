@@ -421,11 +421,6 @@ export const CCSDDPage: React.FC<CCSDDPageProps> = ({ onClose }) => {
           <div className="font-bold flex items-center gap-1.5 text-primary">
             <span>⚡</span> CC-SDD
           </div>
-          {projectName && (
-            <span className="px-2.5 py-0.5 bg-muted/50 border border-border rounded-full text-xs text-muted-foreground">
-              {projectName}
-            </span>
-          )}
         </div>
         <div className="flex items-center gap-1.5">
           {canvasJson && (

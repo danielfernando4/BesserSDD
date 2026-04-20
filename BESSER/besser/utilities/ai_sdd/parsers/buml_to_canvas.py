@@ -13,12 +13,12 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 # Layout constants
-CLASS_WIDTH = 220
+CLASS_WIDTH = 200
 CLASS_HEIGHT_BASE = 80
 ATTR_HEIGHT = 24
 METHOD_HEIGHT = 24
-PADDING_X = 250
-PADDING_Y = 150
+PADDING_X = 40
+PADDING_Y = 40
 COLS = 3  # Number of columns in the grid layout
 
 
@@ -248,164 +248,77 @@ def parse_design_to_canvas(design_content: str) -> dict:
 
 
 def _parse_classes(content: str) -> list[dict]:
-    """Parse class definitions from design.md content."""
+    """Parse class definitions from a ```buml block."""
     classes = []
-    lines = content.split("\n")
-    i = 0
-    in_classes_section = False
-
-    while i < len(lines):
-        line = lines[i].strip()
-
-        # Detect "### Classes" section
-        if line.lower() == "### classes":
-            in_classes_section = True
-            i += 1
-            continue
-
-        # Detect "### Relationships" to stop parsing classes
-        if line.lower() == "### relationships":
-            in_classes_section = False
-            i += 1
-            continue
-
-        if in_classes_section and line.startswith("#### "):
-            class_name = line.replace("####", "").strip()
-            cls: dict = {"name": class_name, "attributes": [], "methods": [], "is_abstract": False, "is_enum": False}
-            i += 1
-
-            while i < len(lines):
-                cline = lines[i].strip()
-
-                if cline.startswith("#### ") or cline.startswith("### ") or cline.startswith("## "):
-                    break
-
-                if cline.startswith("- **Type:**"):
-                    type_val = cline.replace("- **Type:**", "").strip()
-                    if type_val.lower() == "enumeration":
-                        cls["is_enum"] = True
-                elif cline.startswith("- **Abstract:**"):
-                    abs_val = cline.replace("- **Abstract:**", "").strip().lower()
-                    cls["is_abstract"] = abs_val in ("true", "yes")
-                elif cline.startswith("- **Attributes:**"):
-                    i += 1
-                    while i < len(lines):
-                        aline = lines[i].strip()
-                        if not aline.startswith("- "):
-                            break
-                        attr = _parse_attribute_line(aline)
-                        if attr:
-                            cls["attributes"].append(attr)
-                        i += 1
-                    continue
-                elif cline.startswith("- **Methods:**"):
-                    i += 1
-                    while i < len(lines):
-                        mline = lines[i].strip()
-                        if not mline.startswith("- "):
-                            break
-                        method = _parse_method_line(mline)
-                        if method:
-                            cls["methods"].append(method)
-                        i += 1
-                    continue
-                elif cline.startswith("- **Literals:**"):
-                    cls["is_enum"] = True
-                    cls["literals"] = []
-                    i += 1
-                    while i < len(lines):
-                        lline = lines[i].strip()
-                        if not lline.startswith("- "):
-                            break
-                        literal = lline.lstrip("- ").strip()
-                        if literal:
-                            cls["literals"].append(literal)
-                        i += 1
-                    continue
-
-                i += 1
-
-            classes.append(cls)
-            continue
-
-        i += 1
+    
+    # Isolate strictly the BUML code blocks
+    buml_blocks = re.findall(r'```buml(.*?)```', content, re.DOTALL)
+    buml_content = "\n".join(buml_blocks) if buml_blocks else content
+    
+    # Find all classes: class Name { ... }
+    class_pattern = re.compile(r'class\s+([A-Za-z0-9_]+)\s*\{([^}]*)\}')
+    for match in class_pattern.finditer(buml_content):
+        class_name = match.group(1).strip()
+        body = match.group(2).strip()
+        
+        cls: dict = {"name": class_name, "attributes": [], "methods": [], "is_abstract": False, "is_enum": False}
+        
+        # Parse attributes and methods inside the class body
+        for line in body.split('\n'):
+            line = line.strip()
+            if not line or line.startswith('//'):
+                continue
+                
+            # If it has parentheses, it's a method
+            if '(' in line and ')' in line:
+                method = _parse_method_line(line)
+                if method:
+                    cls["methods"].append(method)
+            else:
+                attr = _parse_attribute_line(line)
+                if attr:
+                    cls["attributes"].append(attr)
+                    
+        classes.append(cls)
 
     return classes
 
 
 def _parse_enumerations(content: str) -> list[dict]:
-    """Parse enumeration definitions (already handled in _parse_classes with is_enum flag)."""
-    # Enumerations are parsed as part of _parse_classes with is_enum=True
+    """No separate enumeration parsing for now; enums are handled via class literals if present."""
     return []
 
 
 def _parse_relationships(content: str) -> list[dict]:
-    """Parse relationship definitions from design.md content."""
+    """Parse relationship definitions from a ```buml block."""
     relationships = []
-    lines = content.split("\n")
-    i = 0
-    in_relationships_section = False
-
-    while i < len(lines):
-        line = lines[i].strip()
-
-        if line.lower() == "### relationships":
-            in_relationships_section = True
-            i += 1
-            continue
-
-        if in_relationships_section and (line.startswith("## ") and not line.startswith("### ")):
-            break
-
-        if in_relationships_section and line.startswith("#### "):
-            # Parse relationship header: "#### ClassName1 → ClassName2"
-            header = line.replace("####", "").strip()
-            # Handle various arrow formats
-            parts = None
-            for arrow in ["→", "->", "—>", "=>", " to "]:
-                if arrow in header:
-                    parts = [p.strip() for p in header.split(arrow, 1)]
-                    break
-
-            if not parts or len(parts) != 2:
-                i += 1
-                continue
-
-            rel: dict = {
-                "source": parts[0],
-                "target": parts[1],
-                "type": "Bidirectional",
-                "source_mult": "1",
-                "target_mult": "1",
-                "source_role": "",
-                "target_role": "",
-                "name": "",
-            }
-
-            i += 1
-            while i < len(lines):
-                rline = lines[i].strip()
-                if rline.startswith("#### ") or rline.startswith("### ") or rline.startswith("## "):
-                    break
-
-                if rline.startswith("- **Type:**"):
-                    rel["type"] = rline.replace("- **Type:**", "").strip()
-                elif rline.startswith("- **Source Multiplicity:**"):
-                    rel["source_mult"] = rline.replace("- **Source Multiplicity:**", "").strip()
-                elif rline.startswith("- **Target Multiplicity:**"):
-                    rel["target_mult"] = rline.replace("- **Target Multiplicity:**", "").strip()
-                elif rline.startswith("- **Source Role:**"):
-                    rel["source_role"] = rline.replace("- **Source Role:**", "").strip()
-                elif rline.startswith("- **Target Role:**"):
-                    rel["target_role"] = rline.replace("- **Target Role:**", "").strip()
-
-                i += 1
-
-            relationships.append(rel)
-            continue
-
-        i += 1
-
+    
+    buml_blocks = re.findall(r'```buml(.*?)```', content, re.DOTALL)
+    buml_content = "\n".join(buml_blocks) if buml_blocks else content
+    
+    # rel Source -> Target: Type [multiplicity]
+    # e.g., rel User -> Order: Composition [1..*]
+    rel_pattern = re.compile(r'rel\s+([A-Za-z0-9_]+)\s*->\s*([A-Za-z0-9_]+)\s*:\s*([A-Za-z]+)\s*\[(.*?)\]')
+    
+    for match in rel_pattern.finditer(buml_content):
+        source = match.group(1).strip()
+        target = match.group(2).strip()
+        rel_type = match.group(3).strip()
+        mult = match.group(4).strip()
+        
+        # Approximate target multiplicity to whatever is in the brackets
+        rel: dict = {
+            "source": source,
+            "target": target,
+            "type": rel_type,
+            "source_mult": "1",
+            "target_mult": mult,
+            "source_role": "",
+            "target_role": "",
+            "name": "",
+        }
+        relationships.append(rel)
+        
     return relationships
 
 
