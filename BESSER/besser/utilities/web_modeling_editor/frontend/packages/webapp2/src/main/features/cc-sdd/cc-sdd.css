@@ -133,3 +133,137 @@
   border-top: 1px solid hsl(var(--border));
   margin: 24px 0;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   CC-SDD — Sync Button (Bidirectional Traceability)
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.sdd-sync-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1.5px solid transparent;
+  white-space: nowrap;
+}
+
+/* Ready state — pulsing to attract attention */
+.sdd-sync-button--ready {
+  background: linear-gradient(135deg, hsl(var(--primary) / 0.15), hsl(270 60% 60% / 0.15));
+  border-color: hsl(var(--primary) / 0.4);
+  color: hsl(var(--primary));
+  animation: sdd-sync-pulse 2s ease-in-out infinite;
+}
+
+.sdd-sync-button--ready:hover {
+  background: linear-gradient(135deg, hsl(var(--primary) / 0.25), hsl(270 60% 60% / 0.25));
+  border-color: hsl(var(--primary) / 0.6);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px hsl(var(--primary) / 0.2);
+}
+
+.sdd-sync-button--ready:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+/* Syncing state */
+.sdd-sync-button--syncing {
+  background: hsl(var(--muted));
+  border-color: hsl(var(--border));
+  color: hsl(var(--muted-foreground));
+  cursor: wait;
+  animation: none;
+}
+
+/* Sync icon */
+.sdd-sync-icon {
+  display: inline-flex;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.sdd-sync-icon--spinning {
+  animation: sdd-sync-spin 1s linear infinite;
+}
+
+/* Pulse animation for the ready button */
+@keyframes sdd-sync-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 hsl(var(--primary) / 0.3);
+  }
+  50% {
+    box-shadow: 0 0 0 4px hsl(var(--primary) / 0);
+  }
+}
+
+/* Spin animation for the syncing icon */
+@keyframes sdd-sync-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   CC-SDD — Floating Sync Button (fixed top-right, above everything)
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.sdd-sync-floating {
+  position: fixed;
+  top: 12px;
+  right: 16px;
+  z-index: 9999;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  border: 2px solid transparent;
+  white-space: nowrap;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(8px);
+}
+
+/* Ready state — pulsing gradient */
+.sdd-sync-floating--ready {
+  background: linear-gradient(135deg, hsl(var(--primary)), hsl(270 70% 55%));
+  border-color: hsl(var(--primary) / 0.6);
+  color: white;
+  animation: sdd-sync-pulse-float 2s ease-in-out infinite;
+}
+
+.sdd-sync-floating--ready:hover {
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 6px 28px hsl(var(--primary) / 0.4);
+}
+
+.sdd-sync-floating--ready:active {
+  transform: translateY(0) scale(1);
+}
+
+/* Syncing state */
+.sdd-sync-floating--syncing {
+  background: hsl(var(--muted));
+  border-color: hsl(var(--border));
+  color: hsl(var(--muted-foreground));
+  cursor: wait;
+  animation: none;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+}
+
+@keyframes sdd-sync-pulse-float {
+  0%, 100% {
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25), 0 0 0 0 hsl(var(--primary) / 0.4);
+  }
+  50% {
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25), 0 0 0 6px hsl(var(--primary) / 0);
+  }
+}

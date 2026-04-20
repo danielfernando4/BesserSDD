@@ -47,4 +47,7 @@ export interface WorkspaceTopBarProps {
   onProjectNameDraftChange: (value: string) => void;
   onProjectRename: () => void;
   onOpenCCSDD: () => void;
+  sddSyncAvailable?: boolean;
+  sddSyncSyncing?: boolean;
+  onSddSyncTrigger?: () => void;
 }

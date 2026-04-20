@@ -55,9 +55,22 @@ const WorkspaceTopBarInner: React.FC<WorkspaceTopBarProps> = ({
   onProjectNameDraftChange,
   onProjectRename,
   onOpenCCSDD,
+  sddSyncAvailable,
+  sddSyncSyncing,
+  onSddSyncTrigger,
 }) => {
   return (
     <header className={`relative z-20 animate-slide-in-down px-4 py-2 sm:px-6 ${headerBackgroundClass}`}>
+      <style>{`
+        @keyframes sdd-topbar-pulse {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4); }
+          50% { box-shadow: 0 0 0 4px rgba(99, 102, 241, 0); }
+        }
+        @keyframes sdd-sync-spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <button
@@ -146,6 +159,49 @@ const WorkspaceTopBarInner: React.FC<WorkspaceTopBarProps> = ({
               WebkitTextFillColor: 'transparent',
             }}>CC-SDD</span>
           </button>
+          {/* ── Sync Button — next to CC-SDD ── */}
+          {sddSyncAvailable && (
+            <button
+              type="button"
+              onClick={onSddSyncTrigger}
+              disabled={sddSyncSyncing}
+              id="sdd-sync-diagram-topbar"
+              title="Sincronizar cambios del diagrama con requisitos y trazabilidad"
+              className="sdd-sync-button-topbar"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '4px 14px',
+                borderRadius: '8px',
+                fontSize: '12px',
+                fontWeight: 700,
+                cursor: sddSyncSyncing ? 'wait' : 'pointer',
+                border: '2px solid',
+                whiteSpace: 'nowrap' as const,
+                transition: 'all 0.2s ease',
+                background: sddSyncSyncing
+                  ? (isDarkTheme ? 'hsl(220 15% 18%)' : 'hsl(220 15% 92%)')
+                  : 'linear-gradient(135deg, #6366f1, #a855f7)',
+                borderColor: sddSyncSyncing
+                  ? (isDarkTheme ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)')
+                  : 'rgba(99,102,241,0.5)',
+                color: sddSyncSyncing
+                  ? (isDarkTheme ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)')
+                  : 'white',
+                animation: sddSyncSyncing ? 'none' : 'sdd-topbar-pulse 2s ease-in-out infinite',
+              }}
+            >
+              <span style={{
+                display: 'inline-flex',
+                fontSize: '14px',
+                animation: sddSyncSyncing ? 'sdd-sync-spin 1s linear infinite' : 'none',
+              }}>
+                {sddSyncSyncing ? '⟳' : '🔄'}
+              </span>
+              <span className="hidden xl:inline">{sddSyncSyncing ? 'Sincronizando...' : 'Sincronizar'}</span>
+            </button>
+          )}
           <TopBarUtilities
             showQualityCheck={showQualityCheck}
             outlineButtonClass={outlineButtonClass}

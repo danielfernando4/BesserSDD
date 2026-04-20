@@ -222,4 +222,143 @@ export class ClassDiagramConverter implements DiagramConverter {
         return 'ClassBidirectional';
     }
   }
+
+  /**
+   * Reverse-convert: UMLModel (Apollon format) → SystemClassSpec JSON.
+   *
+   * This enables the "diagram → requirements" direction of bidirectional
+   * traceability. When the user edits the canvas directly, we extract the
+   * current state as a SystemClassSpec that the SDD pipeline agents
+   * (DesignAgent, TraceabilityAgent, RequirementsAgent) understand.
+   */
+  static reverseConvert(umlModel: any): any {
+    if (!umlModel || !umlModel.elements) {
+      return { systemName: 'System', classes: [], relationships: [] };
+    }
+
+    const elements = umlModel.elements || {};
+    const relationships = umlModel.relationships || {};
+
+    // Identify class-level elements (Class, AbstractClass, Enumeration, Interface)
+    const classTypes = new Set(['Class', 'AbstractClass', 'Enumeration', 'Interface']);
+    const classElements: Record<string, any> = {};
+    const childElements: Record<string, any> = {};
+
+    for (const [id, el] of Object.entries<any>(elements)) {
+      if (classTypes.has(el.type)) {
+        classElements[id] = el;
+      } else if (el.owner) {
+        if (!childElements[el.owner]) childElements[el.owner] = [];
+        childElements[el.owner].push(el);
+      }
+    }
+
+    // Build classes array
+    const classes: any[] = [];
+    const idToName: Record<string, string> = {};
+
+    for (const [id, el] of Object.entries<any>(classElements)) {
+      idToName[id] = el.name || 'UnnamedClass';
+
+      const children = childElements[id] || [];
+      const attributes: any[] = [];
+      const methods: any[] = [];
+
+      for (const child of children) {
+        if (child.type === 'ClassAttribute') {
+          const attr: any = {
+            name: child.name || 'unnamed',
+            type: child.attributeType || 'String',
+            visibility: child.visibility || 'public',
+          };
+          attributes.push(attr);
+        } else if (child.type === 'ClassMethod') {
+          // Parse method name — may be in "methodName(params)" format
+          let methodName = child.name || 'method';
+          const paramList: any[] = [];
+
+          const parenMatch = methodName.match(/^([^(]+)\(([^)]*)\)/);
+          if (parenMatch) {
+            methodName = parenMatch[1].trim();
+            const paramStr = parenMatch[2].trim();
+            if (paramStr) {
+              paramStr.split(',').forEach((p: string) => {
+                const parts = p.trim().split(':').map((s: string) => s.trim());
+                paramList.push({
+                  name: parts[0] || 'arg',
+                  type: parts[1] || 'String',
+                });
+              });
+            }
+          }
+
+          methods.push({
+            name: methodName,
+            returnType: child.attributeType || 'void',
+            visibility: child.visibility || 'public',
+            parameters: paramList,
+          });
+        }
+      }
+
+      classes.push({
+        className: el.name || 'UnnamedClass',
+        attributes,
+        methods,
+        isAbstract: el.type === 'AbstractClass',
+        isEnumeration: el.type === 'Enumeration',
+      });
+    }
+
+    // Build relationships array
+    const rels: any[] = [];
+
+    for (const [, rel] of Object.entries<any>(relationships)) {
+      const sourceId = rel.source?.element;
+      const targetId = rel.target?.element;
+      const sourceName = idToName[sourceId];
+      const targetName = idToName[targetId];
+
+      if (!sourceName || !targetName) continue;
+
+      const relType = ClassDiagramConverter.reverseRelationshipType(rel.type);
+
+      rels.push({
+        type: relType,
+        source: sourceName,
+        target: targetName,
+        sourceMultiplicity: rel.source?.multiplicity || '1',
+        targetMultiplicity: rel.target?.multiplicity || '1',
+        name: rel.name || rel.target?.role || '',
+      });
+    }
+
+    return {
+      systemName: 'System',
+      classes,
+      relationships: rels,
+    };
+  }
+
+  /**
+   * Map Apollon relationship type back to SystemClassSpec relationship type.
+   */
+  private static reverseRelationshipType(apollonType: string): string {
+    switch (apollonType) {
+      case 'ClassInheritance':
+        return 'Inheritance';
+      case 'ClassComposition':
+        return 'Composition';
+      case 'ClassAggregation':
+        return 'Aggregation';
+      case 'ClassRealization':
+        return 'Realization';
+      case 'ClassDependency':
+        return 'Dependency';
+      case 'ClassBidirectional':
+      case 'ClassUnidirectional':
+      default:
+        return 'Association';
+    }
+  }
 }

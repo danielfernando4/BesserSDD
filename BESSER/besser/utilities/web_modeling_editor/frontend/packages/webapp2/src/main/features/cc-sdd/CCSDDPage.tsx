@@ -12,8 +12,9 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAppDispatch } from '../../app/store/hooks';
-import { switchDiagramTypeThunk, updateDiagramModelThunk, bumpEditorRevision } from '../../app/store/workspaceSlice';
+import { useAppDispatch, useAppSelector } from '../../app/store/hooks';
+import { switchDiagramTypeThunk, updateDiagramModelThunk, bumpEditorRevision, selectActiveDiagram } from '../../app/store/workspaceSlice';
+import { ClassDiagramConverter } from '../assistant/services/converters/ClassDiagramConverter';
 import { sddWebSocket, SDDMessage } from './sdd-websocket';
 import './cc-sdd.css';
 
@@ -145,6 +146,12 @@ export const CCSDDPage: React.FC<CCSDDPageProps> = ({ onClose }) => {
   const [chatInput, setChatInput] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [canvasJson, setCanvasJson] = useState<any>(null);
+  const [hasPendingDiagramChanges, setHasPendingDiagramChanges] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const isSyncingRef = useRef(false);
+
+  // Read the current diagram model from Redux (changes when user edits on canvas)
+  const activeDiagram = useAppSelector(selectActiveDiagram);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
@@ -169,6 +176,68 @@ export const CCSDDPage: React.FC<CCSDDPageProps> = ({ onClose }) => {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
+
+  // ── Detect canvas diagram changes (bidirectional traceability) ──────
+  useEffect(() => {
+    // We only need the diagram model to track changes. It works even outside pipeline runs.
+    if (!activeDiagram?.model) return;
+
+    // Extract the current canvas state as SystemClassSpec
+    const currentModel = activeDiagram.model;
+    if (!currentModel || typeof currentModel !== 'object') return;
+
+    try {
+      const currentSpec = ClassDiagramConverter.reverseConvert(currentModel);
+
+      if (!canvasJson) {
+        // If we don't have a baseline yet, set the current model as the baseline immediately
+        setCanvasJson(currentSpec);
+        return;
+      }
+
+      // Quick comparison: class count + class names + attribute counts
+      const baseClasses = new Set((canvasJson.classes || []).map((c: any) => c.className));
+      const currentClasses = new Set((currentSpec.classes || []).map((c: any) => c.className));
+
+      // Check for added/removed classes
+      let hasChanges = baseClasses.size !== currentClasses.size;
+
+      if (!hasChanges) {
+        // Check if class names differ
+        for (const name of currentClasses) {
+          if (!baseClasses.has(name)) { hasChanges = true; break; }
+        }
+      }
+
+      if (!hasChanges) {
+        // Deep check: compare attribute counts per class
+        const baseAttrCounts: Record<string, number> = {};
+        (canvasJson.classes || []).forEach((c: any) => {
+          baseAttrCounts[c.className] = (c.attributes || []).length;
+        });
+        for (const cls of currentSpec.classes || []) {
+          const baseCount = baseAttrCounts[cls.className] ?? -1;
+          if (baseCount !== (cls.attributes || []).length) {
+            hasChanges = true;
+            break;
+          }
+        }
+      }
+
+      if (!hasChanges) {
+        // Check relationship count
+        const baseRelCount = (canvasJson.relationships || []).length;
+        const currentRelCount = (currentSpec.relationships || []).length;
+        if (baseRelCount !== currentRelCount) hasChanges = true;
+      }
+
+      setHasPendingDiagramChanges(hasChanges);
+      // Notify top bar about sync availability
+      window.dispatchEvent(new CustomEvent('sdd:sync-available', { detail: { available: hasChanges } }));
+    } catch (e) {
+      console.warn('[CC-SDD] Change detection error:', e);
+    }
+  }, [activeDiagram?.model, canvasJson]);
 
   // ── Auto-render diagram on canvas when received ─────────────────────
   const autoRenderCanvas = useCallback(async (systemSpec: any) => {
@@ -248,6 +317,12 @@ export const CCSDDPage: React.FC<CCSDDPageProps> = ({ onClose }) => {
           timestamp: Date.now(),
         }]);
         setIsSending(false);
+        // If we were syncing and this is a traceability message, sync is done
+        if (isSyncingRef.current && msg.phase === 'traceability') {
+          setIsSyncing(false);
+          isSyncingRef.current = false;
+          setHasPendingDiagramChanges(false);
+        }
         break;
 
       case 'pipeline_complete':
@@ -330,6 +405,64 @@ export const CCSDDPage: React.FC<CCSDDPageProps> = ({ onClose }) => {
     sddWebSocket.sendVibeMessage(msg);
     setChatInput('');
   }, [chatInput, isSending]);
+
+  // ── Sync Diagram Changes (Bidirectional Traceability) ──────────────
+  const handleSyncDiagram = useCallback(() => {
+    if (!activeDiagram?.model || isSyncing) return;
+
+    try {
+      const currentSpec = ClassDiagramConverter.reverseConvert(activeDiagram.model);
+      setIsSyncing(true);
+      isSyncingRef.current = true;
+
+      // Notify user in chat
+      setChatMessages(prev => [...prev, {
+        id: `sync-${Date.now()}`,
+        type: 'system',
+        text: '🔄 **Sincronizando cambios del diagrama** con requisitos y trazabilidad...',
+        phase: 'traceability',
+        timestamp: Date.now(),
+      }]);
+
+      // Send to backend via WebSocket
+      sddWebSocket.sendDiagramUpdate(currentSpec);
+
+      // Update local baseline
+      setCanvasJson(currentSpec);
+    } catch (e) {
+      console.error('[CC-SDD] Sync failed:', e);
+      setChatMessages(prev => [...prev, {
+        id: `sync-error-${Date.now()}`,
+        type: 'error',
+        text: `❌ Error al sincronizar: ${e}`,
+        timestamp: Date.now(),
+      }]);
+      setIsSyncing(false);
+      isSyncingRef.current = false;
+    }
+  }, [activeDiagram?.model, isSyncing]);
+
+  // ── Listen for sync trigger from top bar ────────────────────────────
+  useEffect(() => {
+    const onTrigger = () => handleSyncDiagram();
+    window.addEventListener('sdd:sync-trigger', onTrigger);
+    return () => window.removeEventListener('sdd:sync-trigger', onTrigger);
+  }, [handleSyncDiagram]);
+
+  // ── Broadcast sync state changes ───────────────────────────────────
+  useEffect(() => {
+    if (!isSyncing && !hasPendingDiagramChanges) {
+      window.dispatchEvent(new CustomEvent('sdd:sync-available', { detail: { available: false } }));
+    }
+  }, [isSyncing, hasPendingDiagramChanges]);
+
+  useEffect(() => {
+    if (isSyncing) {
+      window.dispatchEvent(new CustomEvent('sdd:sync-syncing', { detail: { syncing: true } }));
+    } else {
+      window.dispatchEvent(new CustomEvent('sdd:sync-syncing', { detail: { syncing: false } }));
+    }
+  }, [isSyncing]);
 
 
 

@@ -132,6 +132,8 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
   const [isGitHubSidebarOpen, setIsGitHubSidebarOpen] = useState(false);
   const [isCCSDDSidebarOpen, setIsCCSDDSidebarOpen] = useState(false);
   const [isAssistantWorkspaceOpen, setIsAssistantWorkspaceOpen] = useState(false);
+  const [sddSyncAvailable, setSddSyncAvailable] = useState(false);
+  const [sddSyncSyncing, setSddSyncSyncing] = useState(false);
 
   // Derived values
   const activeUmlType = useMemo(
@@ -304,6 +306,28 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
   const closeMobileDrawer = useCallback(() => setIsMobileDrawerOpen(false), []);
 
   // Close mobile drawer on Escape key
+  // ── SDD Sync events from CCSDDPage ──────────────────────────────────
+  useEffect(() => {
+    const onSyncAvailable = (e: Event) => {
+      const available = (e as CustomEvent<{ available: boolean }>).detail?.available ?? false;
+      setSddSyncAvailable(available);
+    };
+    const onSyncSyncing = (e: Event) => {
+      const syncing = (e as CustomEvent<{ syncing: boolean }>).detail?.syncing ?? false;
+      setSddSyncSyncing(syncing);
+    };
+    window.addEventListener('sdd:sync-available', onSyncAvailable);
+    window.addEventListener('sdd:sync-syncing', onSyncSyncing);
+    return () => {
+      window.removeEventListener('sdd:sync-available', onSyncAvailable);
+      window.removeEventListener('sdd:sync-syncing', onSyncSyncing);
+    };
+  }, []);
+
+  const handleSddSyncTrigger = useCallback(() => {
+    window.dispatchEvent(new CustomEvent('sdd:sync-trigger'));
+  }, []);
+
   useEffect(() => {
     if (!isMobileDrawerOpen) return;
     const handleEscape = (e: KeyboardEvent) => {
@@ -491,6 +515,9 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
         onProjectNameDraftChange={setProjectNameDraft}
         onProjectRename={handleProjectRename}
         onOpenCCSDD={() => setIsCCSDDSidebarOpen(p => !p)}
+        sddSyncAvailable={sddSyncAvailable && isCCSDDSidebarOpen}
+        sddSyncSyncing={sddSyncSyncing}
+        onSddSyncTrigger={handleSddSyncTrigger}
       />
 
       {/* Mobile hamburger button - visible only below md breakpoint */}
