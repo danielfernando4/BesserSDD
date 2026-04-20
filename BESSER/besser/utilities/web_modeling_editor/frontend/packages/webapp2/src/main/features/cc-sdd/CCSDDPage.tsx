@@ -382,7 +382,7 @@ export const CCSDDPage: React.FC<CCSDDPageProps> = ({ onClose }) => {
 
             <div className="w-full">
               <textarea
-                className="w-full min-h-[120px] p-4 bg-card border border-border rounded-lg text-sm resize-y focus:outline-none focus:ring-2 focus:ring-primary/50 mb-4 shadow-sm"
+                className="w-full min-h-[100px] p-2 bg-card border border-border rounded-md text-xs resize-y focus:outline-none focus:ring-1 focus:ring-primary/50 mb-2 shadow-sm"
                 value={idea}
                 onChange={(e) => setIdea(e.target.value)}
                 placeholder={'Describe your software idea...\n\nExample: "I want to build an e-commerce platform with user accounts, product catalog, shopping cart..."'}
@@ -390,7 +390,7 @@ export const CCSDDPage: React.FC<CCSDDPageProps> = ({ onClose }) => {
                 disabled={!apiKeyValid}
               />
               <button
-                className="w-full py-3 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 text-white font-semibold rounded-md shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                className="w-full py-2 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 text-white text-xs font-semibold rounded-md shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                 onClick={handleStartPipeline}
                 disabled={!apiKeyValid || !idea.trim()}
                 id="sdd-start-pipeline"
@@ -427,18 +427,18 @@ export const CCSDDPage: React.FC<CCSDDPageProps> = ({ onClose }) => {
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           {canvasJson && (
             <button
-              className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded-md text-xs font-semibold transition-colors flex items-center gap-1.5"
+              className="px-2 py-1 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded text-xs font-semibold transition-colors flex items-center gap-1"
               onClick={handleExportToCanvas}
               id="sdd-export-canvas"
             >
-              <span>🎨</span> Export to Canvas
+              <span>🎨</span> Export Canvas
             </button>
           )}
           <button
-            className="px-3 py-1.5 bg-card hover:bg-accent border border-border rounded-md text-xs font-medium transition-colors"
+            className="px-2 py-1 bg-card hover:bg-accent border border-border rounded text-xs font-medium transition-colors"
             onClick={() => setPipelineStarted(false)}
             id="sdd-new-project"
           >
@@ -486,7 +486,7 @@ export const CCSDDPage: React.FC<CCSDDPageProps> = ({ onClose }) => {
               <button
                 key={file.name}
                 onClick={() => file.status === 'ready' && setActiveFile(file.name)}
-                className={`w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-md text-sm transition-colors text-left ${
+                className={`w-full flex items-center justify-between gap-1.5 px-2 py-1.5 rounded-sm text-xs transition-colors text-left ${
                   activeFile === file.name
                     ? 'bg-primary/10 text-primary font-medium'
                     : 'hover:bg-accent text-foreground'
@@ -524,7 +524,7 @@ export const CCSDDPage: React.FC<CCSDDPageProps> = ({ onClose }) => {
             {chatMessages.map((msg) => (
               <div
                 key={msg.id}
-                className={`p-2.5 rounded-lg text-sm max-w-[95%] break-words ${
+                className={`p-2 rounded text-xs max-w-[95%] break-words ${
                   msg.type === 'user'
                     ? 'bg-primary text-primary-foreground self-end ml-auto rounded-tr-sm'
                     : msg.type === 'system'
@@ -541,10 +541,10 @@ export const CCSDDPage: React.FC<CCSDDPageProps> = ({ onClose }) => {
 
           {pipelineComplete && (
             <div className="p-3 border-t border-border bg-card shrink-0">
-              <div className="flex items-end gap-2 bg-background border border-border rounded-md focus-within:ring-1 focus-within:ring-primary/50 overflow-hidden pr-1">
+              <div className="flex items-end gap-1.5 bg-background border border-border rounded-sm focus-within:ring-1 focus-within:ring-primary/50 overflow-hidden pr-1">
                 <textarea
                   ref={chatInputRef}
-                  className="w-full max-h-32 min-h-[36px] bg-transparent text-sm p-2 resize-none focus:outline-none"
+                  className="w-full max-h-32 min-h-[32px] bg-transparent text-xs p-1.5 resize-none focus:outline-none"
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
                   onKeyDown={handleChatKeyDown}
@@ -567,9 +567,9 @@ export const CCSDDPage: React.FC<CCSDDPageProps> = ({ onClose }) => {
 
       {/* Floating Canvas Overlay for Markdown Viewing */}
       {activeFile && (
-        <div className="fixed top-[56px] bottom-0 left-[506px] right-0 z-20 bg-background border-l border-border shadow-2xl flex flex-col pointer-events-auto animate-in slide-in-from-right-4 duration-300">
-          <div className="flex items-center px-4 bg-muted/20 border-b border-border shrink-0 min-h-[48px]">
-            <div className="flex items-center bg-card border border-border border-b-0 mt-2 px-3 py-1.5 rounded-t-md text-sm font-medium text-primary">
+        <div className="fixed top-[48px] bottom-0 left-[380px] right-0 z-20 bg-background border-l border-border shadow-xl flex flex-col pointer-events-auto animate-in slide-in-from-right-4 duration-300 xl:left-[450px]">
+          <div className="flex items-center px-4 bg-muted/10 border-b border-border shrink-0 min-h-[40px]">
+            <div className="flex items-center bg-card border border-border border-b-0 mt-2 px-2.5 py-1 rounded-t text-xs font-medium text-primary">
               <span className="mr-2">{activeFileData?.icon}</span>
               {activeFile}
               <button

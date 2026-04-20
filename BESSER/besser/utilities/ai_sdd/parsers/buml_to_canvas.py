@@ -17,8 +17,8 @@ CLASS_WIDTH = 220
 CLASS_HEIGHT_BASE = 80
 ATTR_HEIGHT = 24
 METHOD_HEIGHT = 24
-PADDING_X = 80
-PADDING_Y = 80
+PADDING_X = 250
+PADDING_Y = 150
 COLS = 3  # Number of columns in the grid layout
 
 
@@ -233,7 +233,7 @@ def parse_design_to_canvas(design_content: str) -> dict:
     canvas_json = {
         "version": "3.0.0",
         "type": "ClassDiagram",
-        "size": {"width": 2400, "height": 1600},
+        "size": {"width": 1400, "height": 740},
         "interactive": {"elements": {}, "relationships": {}},
         "elements": elements,
         "relationships": relationship_map,

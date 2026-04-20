@@ -573,13 +573,11 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
           onToggleExpanded={() => setIsSidebarExpanded((previous) => !previous)}
         />
 
-        {isCCSDDSidebarOpen && (
-          <div className={`relative flex flex-col shrink-0 border-r z-10 w-[450px] shadow-xl ${isDarkTheme ? 'border-border/70 bg-card' : 'border-border/50 bg-card'}`}>
-            <Suspense fallback={<div className="flex h-full items-center justify-center p-4">Loading CC-SDD...</div>}>
-              <CCSDDSidebar onClose={() => setIsCCSDDSidebarOpen(false)} />
-            </Suspense>
-          </div>
-        )}
+        <div className={`relative flex flex-col shrink-0 z-10 w-[320px] shadow-xl transition-all ${isDarkTheme ? 'border-border/70 bg-card' : 'border-border/50 bg-card'} ${!isCCSDDSidebarOpen ? 'hidden' : 'border-r'}`}>
+          <Suspense fallback={<div className="flex h-full items-center justify-center p-4 text-xs">Loading CC-SDD...</div>}>
+            <CCSDDSidebar onClose={() => setIsCCSDDSidebarOpen(false)} />
+          </Suspense>
+        </div>
 
         <main className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
           {location.pathname === '/' && <DiagramTabs />}
