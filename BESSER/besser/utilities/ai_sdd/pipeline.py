@@ -104,10 +104,59 @@ class SDDPipeline:
     # ── Pipeline Start ─────────────────────────────────────────────────
 
     async def start_pipeline(self, idea: str) -> None:
-        """Start the pipeline. Generates brief and pauses for user input."""
+        """Start or restore the pipeline from disk if files exist."""
         self.project = SDDProject(idea=idea)
         logger.info(f"[Pipeline] Starting with idea: {idea[:100]}...")
-        await self._run_phase(Phase.BRIEF)
+
+        # Hydrate from disk
+        restored_any = False
+        
+        brief = self._load_file("brief.md")
+        if brief:
+            restored_any = True
+            self.project.brief = brief
+            await self.send({"type": "file_update", "filename": "brief.md", "content": brief})
+            await self.send({"type": "pipeline_status", "phase": "brief", "status": "completed"})
+            self.project.current_phase = Phase.REQUIREMENTS
+            
+            reqs = self._load_file("requirements.md")
+            if reqs:
+                self.project.requirements = reqs
+                await self.send({"type": "file_update", "filename": "requirements.md", "content": reqs})
+                await self.send({"type": "pipeline_status", "phase": "requirements", "status": "completed"})
+                self.project.current_phase = Phase.DESIGN
+                
+                design = self._load_file("design.md")
+                canvas_str = self._load_file("class_diagram.json")
+                if design and canvas_str:
+                    self.project.design_md = design
+                    try:
+                        spec = json.loads(canvas_str)
+                        self.project.canvas_json = spec
+                        await self.send({"type": "canvas_update", "canvasJson": spec})
+                    except Exception as e:
+                        logger.warning(f"Could not load class_diagram.json: {e}")
+                    await self.send({"type": "file_update", "filename": "design.md", "content": design})
+                    await self.send({"type": "pipeline_status", "phase": "design", "status": "completed"})
+                    self.project.current_phase = Phase.TRACEABILITY
+                    
+                    trace = self._load_file("traceability.md")
+                    if trace:
+                        self.project.traceability = trace
+                        await self.send({"type": "file_update", "filename": "traceability.md", "content": trace})
+                        await self.send({"type": "pipeline_status", "phase": "traceability", "status": "completed"})
+                        await self.send({"type": "pipeline_complete", "projectName": self.project.project_name})
+                        self.project.current_phase = Phase.COMPLETE
+                        
+        if restored_any:
+            await self.send({
+                "type": "agent_message",
+                "phase": self.project.current_phase.value if self.project.current_phase != Phase.COMPLETE else "vibe",
+                "message": "📂 **Proyecto restaurado exitosamente** desde el directorio.\n\nPuedes continuar tu trabajo desde este punto a través del chat, o utilizar el botón Sincronizar si hiciste más cambios en el lienzo."
+            })
+            
+        if self.project.current_phase != Phase.COMPLETE:
+            await self._run_phase(self.project.current_phase)
 
     # ── User Message Handler (Agent-Driven Routing) ────────────────────
 
@@ -541,6 +590,15 @@ class SDDPipeline:
         await self.send({"type": "error", "message": message})
 
     # ── File Persistence ─────────────────────────────────────────────────
+
+    def _load_file(self, filename: str) -> Optional[str]:
+        """Load a file from the output directory if it exists."""
+        if not self.output_dir:
+            return None
+        path = Path(self.output_dir) / filename
+        if path.exists():
+            return path.read_text(encoding="utf-8")
+        return None
 
     def _save_file(self, filename: str, content: str) -> None:
         """Persist a generated file to the output directory (overwrites)."""
