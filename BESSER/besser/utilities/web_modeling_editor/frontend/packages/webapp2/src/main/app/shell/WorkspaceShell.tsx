@@ -515,7 +515,7 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
         onProjectNameDraftChange={setProjectNameDraft}
         onProjectRename={handleProjectRename}
         onOpenCCSDD={() => setIsCCSDDSidebarOpen(p => !p)}
-        sddSyncAvailable={sddSyncAvailable && isCCSDDSidebarOpen}
+        sddSyncAvailable={sddSyncAvailable}
         sddSyncSyncing={sddSyncSyncing}
         onSddSyncTrigger={handleSddSyncTrigger}
       />
