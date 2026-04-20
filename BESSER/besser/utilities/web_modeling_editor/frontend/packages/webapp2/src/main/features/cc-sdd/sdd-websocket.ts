@@ -14,6 +14,7 @@ export type SDDMessageType =
   | 'pipeline_complete'
   | 'file_content'
   | 'error'
+  | 'directory_status'
   | 'pong';
 
 export interface SDDMessage {
@@ -26,6 +27,7 @@ export interface SDDMessage {
   canvasJson?: any;
   projectName?: string;
   files?: string[];
+  has_files?: boolean;
 }
 
 type MessageHandler = (msg: SDDMessage) => void;
@@ -123,6 +125,10 @@ export class SDDWebSocketService {
 
   requestFile(filename: string): void {
     this.send({ type: 'get_file', filename });
+  }
+
+  checkDirectory(outputDir: string): void {
+    this.send({ type: 'check_directory', outputDir });
   }
 
   on(type: string, handler: MessageHandler): () => void {

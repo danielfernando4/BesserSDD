@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import sys
+from pathlib import Path
 
 try:
     import websockets
@@ -56,9 +57,11 @@ async def _handle_start_pipeline(ws, ws_id: str, msg: dict) -> None:
     api_key = msg.get("apiKey", "").strip()
     output_dir = msg.get("outputDir", "").strip() or None
 
-    if not idea:
+    if not idea and not output_dir:
         await _send_json(ws, {"type": "error", "message": "No idea provided."})
         return
+    if not idea:
+        idea = "Proceso de Restauración..."
     if not api_key:
         await _send_json(ws, {"type": "error", "message": "No API key configured."})
         return
@@ -110,6 +113,23 @@ async def _handle_diagram_update(ws, ws_id: str, msg: dict) -> None:
         logger.error(f"[SDD-WS] Diagram update failed: {e}", exc_info=True)
         await _send_json(ws, {"type": "error", "message": f"Diagram sync failed: {e}"})
 
+async def _handle_check_directory(ws, ws_id: str, msg: dict) -> None:
+    """Check if an output directory has existing MD files."""
+    out_dir = msg.get("outputDir", "").strip()
+    if not out_dir:
+        await _send_json(ws, {"type": "directory_status", "has_files": False})
+        return
+        
+    try:
+        path = Path(out_dir)
+        has_files = False
+        if path.exists() and path.is_dir():
+            has_files = (path / "brief.md").exists() or (path / "requirements.md").exists() or (path / "design.md").exists()
+        await _send_json(ws, {"type": "directory_status", "has_files": has_files})
+    except Exception as e:
+        await _send_json(ws, {"type": "directory_status", "has_files": False})
+
+
 
 # ── WebSocket Handler ──────────────────────────────────────────────────
 
@@ -118,6 +138,7 @@ _MESSAGE_HANDLERS = {
     "vibe_message": _handle_user_message,       # All user messages → agent router
     "user_message": _handle_user_message,        # Alias
     "update_diagram": _handle_diagram_update,
+    "check_directory": _handle_check_directory,
 }
 
 

@@ -148,6 +148,7 @@ export const CCSDDPage: React.FC<CCSDDPageProps> = ({ onClose }) => {
   const [canvasJson, setCanvasJson] = useState<any>(null);
   const [hasPendingDiagramChanges, setHasPendingDiagramChanges] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [restoreStatus, setRestoreStatus] = useState<'idle' | 'checking' | 'found' | 'not_found'>('idle');
   const isSyncingRef = useRef(false);
 
   // Read the current diagram model from Redux (changes when user edits on canvas)
@@ -170,6 +171,17 @@ export const CCSDDPage: React.FC<CCSDDPageProps> = ({ onClose }) => {
     if (outputDir.trim()) {
       localStorage.setItem('sdd_output_dir', outputDir.trim());
     }
+  }, [outputDir]);
+
+  const handleOutputDirChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setOutputDir(e.target.value);
+    setRestoreStatus('idle');
+  };
+
+  const handleCheckRestore = useCallback(() => {
+    if (!outputDir.trim() || !sddWebSocket.isConnected) return;
+    setRestoreStatus('checking');
+    sddWebSocket.checkDirectory(outputDir.trim());
   }, [outputDir]);
 
   // ── Auto-scroll chat ────────────────────────────────────────────────
@@ -330,7 +342,12 @@ export const CCSDDPage: React.FC<CCSDDPageProps> = ({ onClose }) => {
         if (msg.projectName) setProjectName(msg.projectName);
         break;
 
+      case 'directory_status':
+        setRestoreStatus(msg.has_files ? 'found' : 'not_found');
+        break;
+
       case 'error':
+        setRestoreStatus(prev => prev === 'checking' ? 'idle' : prev);
         setChatMessages(prev => [...prev, {
           id: `error-${Date.now()}`,
           type: 'error',
@@ -354,7 +371,8 @@ export const CCSDDPage: React.FC<CCSDDPageProps> = ({ onClose }) => {
 
   // ── Start Pipeline ──────────────────────────────────────────────────
   const handleStartPipeline = useCallback(() => {
-    if (!apiKeyValid || !idea.trim()) return;
+    if (!apiKeyValid) return;
+    if (!idea.trim() && restoreStatus !== 'found') return;
 
     setPipelineStarted(true);
     setPhases(INITIAL_PHASES);
@@ -363,7 +381,7 @@ export const CCSDDPage: React.FC<CCSDDPageProps> = ({ onClose }) => {
     setChatMessages([{
       id: 'start',
       type: 'user',
-      text: idea.trim(),
+      text: idea.trim() || '📂 Restaurando proyecto...',
       timestamp: Date.now(),
     }]);
     setPipelineComplete(false);
@@ -523,18 +541,38 @@ export const CCSDDPage: React.FC<CCSDDPageProps> = ({ onClose }) => {
               <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-2 mt-4">
                 📁 Output Directory <span className="text-muted-foreground/60 normal-case font-normal">(optional)</span>
               </label>
-              <input
-                type="text"
-                className="w-full px-3 py-2 bg-background border border-border rounded-md font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                value={outputDir}
-                onChange={(e) => setOutputDir(e.target.value)}
-                placeholder="C:\\Users\\User\\Documents\\MyProject"
-                id="sdd-output-dir-input"
-              />
-              <div className="text-xs mt-1.5 text-muted-foreground">
-                {outputDir.trim()
-                  ? '📂 Files will be saved to this directory'
-                  : '💡 Leave empty to keep files in memory only'}
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  className="w-full px-3 py-2 bg-background border border-border rounded-md font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  value={outputDir}
+                  onChange={handleOutputDirChange}
+                  placeholder="C:\\Users\\User\\Documents\\MyProject"
+                  id="sdd-output-dir-input"
+                />
+                <button
+                  type="button"
+                  onClick={handleCheckRestore}
+                  disabled={!outputDir.trim() || restoreStatus === 'checking'}
+                  className="px-3 py-2 bg-muted hover:bg-muted/80 text-foreground border border-border rounded-md text-sm font-medium whitespace-nowrap disabled:opacity-50 transition-colors"
+                  title="Comprobar si existen archivos .md del proyecto en este directorio"
+                >
+                  {restoreStatus === 'checking' ? '⏳' : '🔍'}
+                </button>
+              </div>
+              <div className="text-xs mt-1.5 flex flex-col gap-1 text-muted-foreground">
+                <span>
+                  {outputDir.trim()
+                    ? '📂 Files will be saved to this directory'
+                    : '💡 Leave empty to keep files in memory only'}
+                </span>
+                
+                {restoreStatus === 'not_found' && (
+                  <span className="text-amber-500 font-medium">⚠️ No se encontró ningún proyecto previo. Debes ingresar una idea abajo para empezar.</span>
+                )}
+                {restoreStatus === 'found' && (
+                  <span className="text-emerald-500 font-medium">✅ Proyecto previo detectado. Puedes restaurarlo sin ingresar idea.</span>
+                )}
               </div>
             </div>
 
@@ -550,11 +588,23 @@ export const CCSDDPage: React.FC<CCSDDPageProps> = ({ onClose }) => {
               <button
                 className="w-full py-2 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 text-white text-xs font-semibold rounded-md shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                 onClick={handleStartPipeline}
-                disabled={!apiKeyValid || !idea.trim()}
+                disabled={!apiKeyValid || (!idea.trim() && restoreStatus !== 'found')}
                 id="sdd-start-pipeline"
               >
                 🚀 Generate Spec &amp; Design
               </button>
+              
+              {restoreStatus === 'found' && (
+                <button
+                  className="w-full mt-2 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-500/90 hover:to-teal-600/90 text-white text-xs font-semibold rounded-md shadow-sm disabled:opacity-50 transition-all border border-emerald-400"
+                  onClick={handleStartPipeline}
+                  disabled={!apiKeyValid}
+                  id="sdd-restore-pipeline"
+                  title="Restaurar el proyecto detectado en el directorio"
+                >
+                  📂 Restaurar Proyecto
+                </button>
+              )}
             </div>
           </div>
         </div>
