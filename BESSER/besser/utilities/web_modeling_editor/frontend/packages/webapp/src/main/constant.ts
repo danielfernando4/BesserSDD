@@ -19,6 +19,14 @@ const defaultBotWsUrl = process.env.NODE_ENV === 'development'
 
 export const UML_BOT_WS_URL = process.env.UML_BOT_WS_URL || defaultBotWsUrl;
 
+const defaultSddWsUrl = process.env.NODE_ENV === 'development'
+  ? 'ws://localhost:8766'
+  : DEPLOYMENT_URL
+    ? `${WS_PROTOCOL}://${NO_HTTP_URL}/sdd-ws`
+    : 'ws://localhost:8766';
+
+export const SDD_WS_URL = process.env.SDD_WS_URL || defaultSddWsUrl;
+
 // prefixes
 export const localStoragePrefix = 'besser_';
 export const localStorageDiagramPrefix = localStoragePrefix + 'diagram_';

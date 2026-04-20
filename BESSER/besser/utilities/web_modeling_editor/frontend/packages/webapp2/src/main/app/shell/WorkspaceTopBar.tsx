@@ -126,6 +126,25 @@ const WorkspaceTopBarInner: React.FC<WorkspaceTopBarProps> = ({
             onOpenKeyboardShortcuts={onOpenKeyboardShortcuts}
             onShowWelcomeGuide={onShowWelcomeGuide}
           />
+          <button
+            type="button"
+            onClick={() => onNavigate('/cc-sdd')}
+            title="CC-SDD: Spec-Driven Development Studio"
+            className={`hidden lg:inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-semibold transition-colors ${outlineButtonClass}`}
+            style={{
+              background: isDarkTheme
+                ? 'linear-gradient(135deg, rgba(99,102,241,0.15), rgba(168,85,247,0.15))'
+                : 'linear-gradient(135deg, rgba(99,102,241,0.08), rgba(168,85,247,0.08))',
+              borderColor: isDarkTheme ? 'rgba(99,102,241,0.4)' : 'rgba(99,102,241,0.25)',
+            }}
+          >
+            <span>⚡</span>
+            <span style={{
+              background: 'linear-gradient(135deg, #6366f1, #a855f7)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+            }}>CC-SDD</span>
+          </button>
           <TopBarUtilities
             showQualityCheck={showQualityCheck}
             outlineButtonClass={outlineButtonClass}

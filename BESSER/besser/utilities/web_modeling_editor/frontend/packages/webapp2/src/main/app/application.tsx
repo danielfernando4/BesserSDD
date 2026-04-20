@@ -60,6 +60,9 @@ const GeneratorConfigDialogs = React.lazy(() =>
 const AssistantWidget = React.lazy(() =>
   import('../features/assistant/components/AssistantWidget').then((m) => ({ default: m.AssistantWidget })),
 );
+const CCSDDPage = React.lazy(() =>
+  import('../features/cc-sdd/CCSDDPage').then((m) => ({ default: m.CCSDDPage })),
+);
 
 const postHogOptions = {
   api_host: POSTHOG_HOST,
@@ -121,6 +124,12 @@ function AppContentInner() {
 
   return (
     <ApollonEditorProvider value={{ editor, setEditor }}>
+      {location.pathname === '/cc-sdd' ? (
+        <Suspense fallback={<div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#0a0e1a', color: '#6366f1', fontFamily: 'Inter, sans-serif' }}>Loading CC-SDD Studio...</div>}>
+          <CCSDDPage />
+        </Suspense>
+      ) : (
+      <>
       <WorkspaceShell
         onOpenProjectHub={() => setShowProjectHub(true)}
         onOpenTemplateDialog={() => setShowTemplateDialog(true)}
@@ -240,6 +249,8 @@ function AppContentInner() {
       <GeneratingOverlay visible={isGenerating} />
       <ToastContainer />
       <GlobalConfirmProvider />
+      </>
+      )}
     </ApollonEditorProvider>
   );
 }

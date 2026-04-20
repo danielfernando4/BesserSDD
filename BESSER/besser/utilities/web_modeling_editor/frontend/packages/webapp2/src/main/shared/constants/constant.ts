@@ -34,6 +34,14 @@ const defaultBotWsUrl = import.meta.env.DEV
 
 export const UML_BOT_WS_URL = _env(process.env.UML_BOT_WS_URL, import.meta.env.VITE_UML_BOT_WS_URL) || defaultBotWsUrl;
 
+const defaultSddWsUrl = import.meta.env.DEV
+  ? 'ws://localhost:8766'
+  : DEPLOYMENT_URL
+    ? `${WS_PROTOCOL}://${NO_HTTP_URL}/sdd-ws`
+    : 'ws://localhost:8766';
+
+export const SDD_WS_URL = _env(process.env.SDD_WS_URL, import.meta.env.VITE_SDD_WS_URL) || defaultSddWsUrl;
+
 // prefixes
 export const localStoragePrefix = 'besser_';
 export const localStorageDiagramPrefix = localStoragePrefix + 'diagram_';

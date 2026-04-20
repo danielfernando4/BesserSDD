@@ -101,6 +101,59 @@ export const ApollonEditorComponent: React.FC = () => {
     };
   }, []); // Only run on mount/unmount
 
+  // ── CC-SDD Canvas Import ─────────────────────────────────────────
+  // Listen for custom event from CC-SDD Studio to import a BUML class diagram
+  useEffect(() => {
+    const handleSDDImport = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      const canvasJson = customEvent.detail;
+      if (!canvasJson || !editorRef.current) {
+        // Also check localStorage as fallback
+        const stored = localStorage.getItem('sdd_canvas_import');
+        if (stored && editorRef.current) {
+          try {
+            const model = JSON.parse(stored) as UMLModel;
+            editorRef.current.model = model;
+            dispatch(updateDiagramThunk({ model, title: 'CC-SDD Design' }));
+            dispatch(setCreateNewEditor(true));
+            localStorage.removeItem('sdd_canvas_import');
+          } catch (e) {
+            console.warn('[SDD Import] Failed to parse stored canvas:', e);
+          }
+        }
+        return;
+      }
+      try {
+        editorRef.current.model = canvasJson as UMLModel;
+        dispatch(updateDiagramThunk({ model: canvasJson, title: 'CC-SDD Design' }));
+        dispatch(setCreateNewEditor(true));
+        localStorage.removeItem('sdd_canvas_import');
+      } catch (e) {
+        console.warn('[SDD Import] Failed to import canvas:', e);
+      }
+    };
+
+    window.addEventListener('sdd-canvas-import', handleSDDImport);
+
+    // Check for pending import on mount
+    const stored = localStorage.getItem('sdd_canvas_import');
+    if (stored && editorRef.current) {
+      try {
+        const model = JSON.parse(stored) as UMLModel;
+        editorRef.current.model = model;
+        dispatch(updateDiagramThunk({ model, title: 'CC-SDD Design' }));
+        dispatch(setCreateNewEditor(true));
+        localStorage.removeItem('sdd_canvas_import');
+      } catch (e) {
+        console.warn('[SDD Import] Failed to parse stored canvas:', e);
+      }
+    }
+
+    return () => {
+      window.removeEventListener('sdd-canvas-import', handleSDDImport);
+    };
+  }, [dispatch, setEditor]);
+
   // Handle createNewEditor flag (for diagram type changes within the same view)
   useEffect(() => {
     const setupEditor = async () => {

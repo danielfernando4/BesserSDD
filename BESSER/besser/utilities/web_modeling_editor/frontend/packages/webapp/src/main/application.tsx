@@ -28,6 +28,11 @@ const GraphicalUIEditor = React.lazy(() =>
   import('./components/grapesjs-editor').then((m) => ({ default: m.GraphicalUIEditor })),
 );
 
+// Lazy-load CC-SDD Studio
+const CCSDDPage = React.lazy(() =>
+  import('./components/cc-sdd/CCSDDPage').then((m) => ({ default: m.CCSDDPage })),
+);
+
 // PostHog options - GDPR compliant configuration
 const postHogOptions = {
   api_host: POSTHOG_HOST,
@@ -56,7 +61,8 @@ function AppContentInner() {
     location.pathname !== '/quantum-editor' &&
     location.pathname !== '/agent-config' &&
     location.pathname !== '/agent-personalization' &&
-    location.pathname !== '/agent-personalization-2'; 
+    location.pathname !== '/agent-personalization-2' &&
+    location.pathname !== '/cc-sdd'; 
 
   const handleSetEditor = (newEditor: ApollonEditor | undefined) => {
     setEditor(newEditor);
@@ -208,6 +214,16 @@ function AppContentInner() {
             <SidebarLayout>
               <QuantumEditorComponent />
             </SidebarLayout>
+          }
+        />
+
+        {/* CC-SDD Studio route */}
+        <Route
+          path="/cc-sdd"
+          element={
+            <Suspense fallback={<div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#0a0e1a', color: '#6366f1', fontFamily: 'Inter, sans-serif' }}>Loading CC-SDD Studio...</div>}>
+              <CCSDDPage />
+            </Suspense>
           }
         />
 

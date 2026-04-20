@@ -1,4 +1,4 @@
-﻿import React, { ChangeEvent, useEffect, useState, useContext, useCallback, useRef } from 'react';
+import React, { ChangeEvent, useEffect, useState, useContext, useCallback, useRef } from 'react';
 import { Nav, Navbar,NavDropdown, Button, OverlayTrigger, Tooltip } from 'react-bootstrap';
 import { FileMenu } from './menues/file-menu';
 import { HelpMenu } from './menues/help-menu';
@@ -654,6 +654,11 @@ export const ApplicationBar: React.FC<{ onOpenHome?: () => void }> = ({ onOpenHo
             )} */}
             <CommunityMenu />
             <HelpMenu />
+            <Nav.Item>
+              <Nav.Link onClick={() => navigate('/cc-sdd')} title="CC-SDD: Spec-Driven Development Studio" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ background: 'linear-gradient(135deg, #6366f1, #a855f7)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', fontWeight: 600 }}>⚡ CC-SDD</span>
+              </Nav.Link>
+            </Nav.Item>
             {isUserDiagram && (
               <>
                 <Nav.Item className="ms-2">
